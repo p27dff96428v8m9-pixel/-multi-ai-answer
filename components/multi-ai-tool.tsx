@@ -13,7 +13,7 @@ import { askAdvancedProviders, askSimpleRelay, getSimpleRelayUrl } from "@/lib/c
 import { detectPrivacyRisks } from "@/lib/privacy-guard";
 
 const DEFAULT_CATEGORY: ConsultationCategory = "development";
-const PLACEHOLDER = "例：このWebアプリの改善点を教えて";
+const PLACEHOLDER = "質問を入力してください";
 const SIMPLE_DESCRIPTION = "複数のAIに一度で質問し、最後に最適な答えをまとめます。";
 const ADVANCED_DESCRIPTION = "入力したAPIキーを使って、選択したAIに直接問い合わせます。";
 const WARNING_TEXT = "※ APIキー・パスワードなどの機密情報は入力しないでください。";
@@ -102,6 +102,9 @@ export function MultiAiTool() {
           <div className="space-y-2">
             <h1 className="text-3xl font-bold tracking-normal text-[#17211b] sm:text-4xl">複数AIアンサー</h1>
             <p className="max-w-3xl text-sm leading-6 text-[#4b5a50]">{mode === "simple" ? SIMPLE_DESCRIPTION : ADVANCED_DESCRIPTION}</p>
+            <p className="max-w-3xl text-xs leading-5 text-[#667168]">
+              簡単モードは1日10回まで、質問は1200文字までです。健康・食事に関する回答は一般情報であり、診断や治療ではありません。
+            </p>
           </div>
           <ModeSwitch mode={mode} onChange={handleModeChange} simpleRelayUrl={simpleRelayUrl} />
         </header>
