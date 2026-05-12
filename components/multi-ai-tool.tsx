@@ -14,8 +14,8 @@ import { detectPrivacyRisks } from "@/lib/privacy-guard";
 
 const DEFAULT_CATEGORY: ConsultationCategory = "development";
 const PLACEHOLDER = "質問を入力してください";
-const SIMPLE_DESCRIPTION = "複数のAIに一度で質問し、最後に最適な答えをまとめます。";
-const ADVANCED_DESCRIPTION = "入力したAPIキーを使って、選択したAIに直接問い合わせます。";
+const SIMPLE_DESCRIPTION = "複数AIが同時に考え、最後にAI同士の合議で最適解を導きます。";
+const ADVANCED_DESCRIPTION = "あなたのAPIキーでAIチームを編成し、回答を比較して合議できます。";
 const WARNING_TEXT = "※ APIキー・パスワードなどの機密情報は入力しないでください。";
 const initialCustomKeys = Object.fromEntries(customProviders.map((provider) => [provider.id, ""]));
 const HISTORY_KEY = "multi-ai-answer-history-v1";
@@ -149,25 +149,39 @@ export function MultiAiTool() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7f3] text-[#17211b]">
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8">
-        <header className="space-y-4 border-b border-[#d6ddd4] pb-5">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-normal text-[#17211b] sm:text-4xl">複数AIアンサー</h1>
-            <p className="max-w-3xl text-sm leading-6 text-[#4b5a50]">{mode === "simple" ? SIMPLE_DESCRIPTION : ADVANCED_DESCRIPTION}</p>
-            <p className="max-w-3xl text-xs leading-5 text-[#667168]">
-              簡単モードは1日10回まで、質問は1200文字までです。健康・食事に関する回答は一般情報であり、診断や治療ではありません。
-            </p>
+    <main className="min-h-screen bg-[#edf3f1] text-[#10211d]">
+      <section className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-8">
+        <header className="overflow-hidden rounded-lg border border-[#b9d4cc] bg-[#0f211d] text-white shadow-lg">
+          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
+            <div className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#7edfc3]">AI Council Console</p>
+              <h1 className="text-3xl font-bold tracking-normal sm:text-4xl">複数AIアンサー</h1>
+              <p className="max-w-3xl text-sm leading-6 text-[#d8e9e3]">{mode === "simple" ? SIMPLE_DESCRIPTION : ADVANCED_DESCRIPTION}</p>
+              <p className="max-w-3xl text-xs leading-5 text-[#a9bcb5]">
+                簡単モードは1日10回まで、質問は1200文字までです。健康・食事に関する回答は一般情報であり、診断や治療ではありません。
+              </p>
+              <div className="grid gap-2 pt-1 text-xs text-[#d8e9e3] sm:grid-cols-3">
+                <StatusPill label="01 質問解析" active={isRunning} />
+                <StatusPill label="02 AIチーム回答" active={isRunning || Boolean(result)} />
+                <StatusPill label="03 合議で統合" active={showFinalAnswer} />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <ModeSwitch mode={mode} onChange={handleModeChange} simpleRelayUrl={simpleRelayUrl} />
+              <div className="rounded-lg border border-white/10 bg-white/8 p-3 text-xs leading-5 text-[#d8e9e3]">
+                <span className="font-semibold text-[#7edfc3]">現在のチーム:</span> {requestProviders.length} AIが待機中
+              </div>
+            </div>
           </div>
-          <ModeSwitch mode={mode} onChange={handleModeChange} simpleRelayUrl={simpleRelayUrl} />
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
           <section className="space-y-5">
-            <form className="space-y-4 rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm sm:p-5" onSubmit={handleSubmit}>
+            <form className="space-y-4 rounded-lg border border-[#b9d4cc] bg-white p-4 shadow-md sm:p-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-[#243227]" htmlFor="question">
-                  質問
+                <label className="flex items-center justify-between gap-3 text-sm font-semibold text-[#243227]" htmlFor="question">
+                  <span>司令入力</span>
+                  <span className="rounded-md bg-[#e8f4ef] px-2 py-1 text-xs text-[#28614d]">AIチームへ送信</span>
                 </label>
                 <textarea
                   id="question"
@@ -176,7 +190,7 @@ export function MultiAiTool() {
                     setQuestion(event.target.value);
                     resetOutput();
                   }}
-                  className="min-h-48 w-full resize-y rounded-md border border-[#c6cec8] bg-[#fbfcfa] p-3 text-base leading-7 outline-none transition focus:border-[#2f6b49] focus:ring-4 focus:ring-[#2f6b49]/15"
+                  className="min-h-44 w-full resize-y rounded-md border border-[#a9c5bc] bg-[#fbfefd] p-3 text-base leading-7 outline-none transition focus:border-[#2f8060] focus:ring-4 focus:ring-[#2f8060]/15"
                   placeholder={PLACEHOLDER}
                 />
                 <p className="text-xs leading-5 text-[#7a837c]">{WARNING_TEXT}</p>
@@ -188,9 +202,9 @@ export function MultiAiTool() {
               <button
                 type="submit"
                 disabled={isRunning || !question.trim() || privacyRisks.length > 0}
-                className="w-full rounded-md bg-[#245f41] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1d4d35] disabled:cursor-not-allowed disabled:bg-[#8ca897]"
+                className="w-full rounded-md bg-[#153b31] px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-[#0f2c24] disabled:cursor-not-allowed disabled:bg-[#8ca897]"
               >
-                {isRunning ? "複数AIに質問しています..." : "複数AIに質問する"}
+                {isRunning ? "AIチームが検討中..." : "AIチームに相談する"}
               </button>
             </form>
 
@@ -198,9 +212,9 @@ export function MultiAiTool() {
             {!isRunning && !result ? <EmptyOutput /> : null}
             {result ? (
               <>
-                <AnswerList answers={result.answers} />
                 <ConsensusAction disabled={completedAnswers.length === 0} onClick={() => setShowFinalAnswer(true)} />
                 {showFinalAnswer ? <FinalAnswerCard result={result} /> : null}
+                <AnswerList answers={result.answers} />
               </>
             ) : null}
           </section>
@@ -244,18 +258,18 @@ function buildProviders(mode: UsageMode, customKeys: Record<string, string>, ena
 
 function ModeSwitch({ mode, simpleRelayUrl, onChange }: { mode: UsageMode; simpleRelayUrl: string; onChange: (mode: UsageMode) => void }) {
   return (
-    <div className="inline-grid w-full max-w-sm grid-cols-2 gap-1 rounded-lg border border-[#d6ddd4] bg-white p-1 shadow-sm">
+    <div className="inline-grid w-full grid-cols-2 gap-1 rounded-lg border border-white/15 bg-white/10 p-1 shadow-sm">
       <button
         type="button"
         onClick={() => onChange("simple")}
-        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${mode === "simple" ? "bg-[#245f41] text-white" : "text-[#34443a] hover:bg-[#eef5ef]"}`}
+        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${mode === "simple" ? "bg-[#7edfc3] text-[#0f211d]" : "text-[#d8e9e3] hover:bg-white/10"}`}
       >
         簡単
       </button>
       <button
         type="button"
         onClick={() => onChange("advanced")}
-        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${mode === "advanced" ? "bg-[#245f41] text-white" : "text-[#34443a] hover:bg-[#eef5ef]"}`}
+        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${mode === "advanced" ? "bg-[#7edfc3] text-[#0f211d]" : "text-[#d8e9e3] hover:bg-white/10"}`}
         title={simpleRelayUrl ? "中継サーバーを使用中" : "ローカルAPIを使用中"}
       >
         詳細
@@ -264,25 +278,37 @@ function ModeSwitch({ mode, simpleRelayUrl, onChange }: { mode: UsageMode; simpl
   );
 }
 
+function StatusPill({ label, active }: { label: string; active: boolean }) {
+  return (
+    <span className={`rounded-md border px-2 py-2 ${active ? "border-[#7edfc3]/60 bg-[#7edfc3]/15 text-[#dffbf2]" : "border-white/10 bg-white/5 text-[#91a69f]"}`}>
+      <span className={`mr-2 inline-block h-2 w-2 rounded-full ${active ? "bg-[#7edfc3] shadow-[0_0_12px_rgba(126,223,195,0.9)]" : "bg-[#60756e]"}`} />
+      {label}
+    </span>
+  );
+}
+
 function ProviderSummary({ mode, providers }: { mode: UsageMode; providers: ProviderConfig[] }) {
   return (
-    <section className="rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm">
-      <p className="text-sm font-semibold text-[#4f6f56]">{mode === "simple" ? "使用するAI" : "詳細AI設定"}</p>
+    <section className="rounded-lg border border-[#b9d4cc] bg-white p-4 shadow-md">
+      <p className="text-sm font-semibold text-[#28614d]">{mode === "simple" ? "AIチーム" : "詳細AI設定"}</p>
+      <p className="mt-1 text-xs leading-5 text-[#6b756d]">役割を分担して回答を検討します。</p>
       <div className="mt-3 grid gap-2">
-        {providers.map((provider) => (
-          <ProviderRow key={provider.id} provider={provider} showModel={mode === "advanced"} />
+        {providers.map((provider, index) => (
+          <ProviderRow key={provider.id} provider={provider} showModel={mode === "advanced"} index={index} />
         ))}
       </div>
     </section>
   );
 }
 
-function ProviderRow({ provider, showModel }: { provider: ProviderConfig; showModel?: boolean }) {
+function ProviderRow({ provider, showModel, index }: { provider: ProviderConfig; showModel?: boolean; index: number }) {
   return (
-    <div className="rounded-md border border-[#e2e7e3] bg-[#fbfcfa] p-3">
+    <div className="rounded-md border border-[#d7e4df] bg-[#fbfefd] p-3">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-[#2f8060]">Agent {index + 1}</p>
           <p className="font-semibold text-[#243227]">{provider.name}</p>
+          <p className="mt-1 text-xs leading-5 text-[#6b756d]">{provider.role}</p>
           {showModel ? <p className="mt-1 text-xs leading-5 text-[#6b756d]">{provider.model}</p> : null}
         </div>
         <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold ${provider.hasApiKey === false ? "bg-[#fff1ef] text-[#8a312a]" : "bg-[#eef5ef] text-[#2f6b49]"}`}>
@@ -344,25 +370,30 @@ function HistoryPanel({
 
 function EmptyOutput() {
   return (
-    <section className="rounded-lg border border-dashed border-[#c6cec8] bg-white/60 p-5 text-center">
-      <p className="text-sm leading-6 text-[#4b5a50]">質問すると、複数AIの回答がここに表示されます。</p>
+    <section className="rounded-lg border border-dashed border-[#9fc9bd] bg-white/70 p-6 text-center">
+      <p className="text-sm font-semibold text-[#28614d]">AIチームは待機中です。</p>
+      <p className="mt-2 text-sm leading-6 text-[#4b5a50]">質問を送ると、各AIの視点と合議結果がここに表示されます。</p>
     </section>
   );
 }
 
 function LoadingOutput({ providers }: { providers: ProviderConfig[] }) {
   return (
-    <section className="rounded-lg border border-[#cdd8d0] bg-[#eef5ef] p-5">
-      <p className="text-sm font-semibold text-[#2f6b49]">実行中</p>
-      <h2 className="mt-1 text-xl font-bold text-[#17211b]">AIへ問い合わせ中</h2>
+    <section className="rounded-lg border border-[#86b9aa] bg-[#10211d] p-5 text-white shadow-lg">
+      <p className="text-sm font-semibold text-[#7edfc3]">AIチーム稼働中</p>
+      <h2 className="mt-1 text-xl font-bold">回答を生成しています</h2>
       <div className="mt-4 grid gap-2">
-        {providers.map((provider) => (
-          <div key={provider.id} className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm">
-            <span className="font-semibold text-[#243227]">{provider.name}</span>
-            <span className="text-[#6b756d]">処理中</span>
+        {providers.map((provider, index) => (
+          <div key={provider.id} className="flex items-center justify-between rounded-md border border-white/10 bg-white/8 px-3 py-2 text-sm">
+            <span className="font-semibold text-[#edf7f4]">{provider.name}</span>
+            <span className="flex items-center gap-2 text-[#a9f2dd]">
+              <span className="ai-pulse-dot" style={{ animationDelay: `${index * 120}ms` }} />
+              {providerActionLabel(provider)}
+            </span>
           </div>
         ))}
       </div>
+      <p className="mt-4 text-xs leading-5 text-[#b7cbc4]">回答取得後、成功したAIだけを使って合議できます。</p>
     </section>
   );
 }
@@ -414,24 +445,33 @@ function SkippedProvidersNotice({ count }: { count: number }) {
   );
 }
 
+function providerActionLabel(provider: ProviderConfig) {
+  if (provider.id === "gemini-free" || provider.id === "gemini") return "知識を整理中";
+  if (provider.id === "openrouter-free" || provider.id === "openrouter") return "補助意見を生成中";
+  if (provider.id === "qwen-free") return "別視点で検証中";
+  if (provider.id === "anthropic") return "論点を確認中";
+  if (provider.id === "openai") return "回答を設計中";
+  return "処理中";
+}
+
 function ConsensusAction({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="w-full rounded-md bg-[#245f41] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1d4d35] disabled:cursor-not-allowed disabled:bg-[#8ca897]"
+      className="w-full rounded-lg border border-[#7edfc3]/40 bg-[#10211d] px-4 py-4 text-sm font-bold text-white shadow-lg transition hover:bg-[#153b31] disabled:cursor-not-allowed disabled:bg-[#8ca897]"
     >
-      AI合議で最適解を出す
+      AI合議で最適解を生成する
     </button>
   );
 }
 
 function FinalAnswerCard({ result }: { result: AnalysisResult }) {
   return (
-    <section className="rounded-lg border border-[#b8d1bf] bg-[#eef5ef] p-5 shadow-sm">
-      <p className="text-sm font-semibold text-[#2f6b49]">最終回答</p>
-      <h2 className="mt-1 text-2xl font-bold text-[#17211b]">AI合議による最適解</h2>
+    <section className="rounded-lg border border-[#79cdb6] bg-[#e8f8f3] p-5 shadow-lg">
+      <p className="text-sm font-semibold text-[#2f8060]">AI Council Result</p>
+      <h2 className="mt-1 text-2xl font-bold text-[#10211d]">合議でまとめた最終回答</h2>
       {result.conclusion.safetyNote ? <StatusBox title="注意" body={result.conclusion.safetyNote} tone="warning" /> : null}
       <div className="mt-4 grid gap-3">
         <ConclusionBlock title="結論" body={result.conclusion.recommendation} strong />
