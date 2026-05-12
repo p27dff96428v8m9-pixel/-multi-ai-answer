@@ -459,9 +459,10 @@ function SkippedProvidersNotice({ count }: { count: number }) {
 }
 
 function providerActionLabel(provider: ProviderConfig) {
-  if (provider.id === "gemini-free" || provider.id === "gemini") return "知識を整理中";
+  if (provider.id === "gemini-free") return "知識を整理中";
   if (provider.id === "openrouter-free" || provider.id === "openrouter") return "補足意見を生成中";
   if (provider.id === "qwen-free") return "実装視点で検証中";
+  if (provider.id === "grok") return "反対視点を生成中";
   if (provider.id === "anthropic") return "論点を確認中";
   if (provider.id === "openai") return "回答を設計中";
   return "処理中";

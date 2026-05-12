@@ -115,7 +115,7 @@ async function callGeminiModel(
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: `${systemInstruction()}\n\n${retry ? "前回の回答が短すぎるか未完成でした。挨拶なしで、結論から、具体例を含めて最後まで回答してください。\n\n" : ""}${buildPrompt(question, provider, category)}` }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 900 },
+      generationConfig: { temperature: 0.4, maxOutputTokens: 1400 },
     }),
   });
 
@@ -207,6 +207,7 @@ function providerPrompt(provider: ProviderConfig, category: ConsultationCategory
       "得意分野: わかりやすい説明 / 初心者向け整理 / 全体把握 / 要点整理",
       "指示: 必ず質問に直接答える。初心者でも理解できる説明にする。結論ファーストで、具体例を入れる。説明不足と回答未完成は禁止。他AIと同じ内容をなぞらず、わかりやすい補足を担当する。",
       "文字数目安: 通常 300〜500文字 / 専門質問 500〜900文字",
+      "安全: 一般的な情報として回答する。医療診断は禁止。性的表現は禁止。危険行為の推奨は禁止。",
       "禁止: 自己紹介 / こんにちは / ものしり博士 / 無意味な前置き / 内容の薄い短文 / Markdown",
       "注意: 途中で切れたような回答は必ず再生成し、最後まで答える。",
     ].join("\n");
@@ -281,7 +282,7 @@ function buildConclusion(category: ConsultationCategory, answers: AiAnswer[]): A
 
   const ranked = [...completed].sort((a, b) => b.confidence - a.confidence);
   const best = ranked[0];
-  const supplements = ranked.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 2);
+  const supplements = ranked.slice(1).map((answer) => answer.summary).slice(0, 2);
   const reasons = adoptionReasonLabels(best, ranked);
 
   return {
@@ -346,9 +347,9 @@ function englishRatio(text: string) {
 
 function buildFinalRecommendation(best: AiAnswer, supplements: string[], reasons: string[], failed: AiAnswer[]) {
   const base = best.summary.replace(/\s+/g, " ");
-  const lead = `統合判断: ${reasons.slice(0, 2).join(" / ")}。`;
+  const lead = reasons.length ? `最終結論: ${reasons.slice(0, 2).join(" / ")}。` : "最終結論。";
   const support = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
-  const caution = failed.length ? ` 注意: ${failed.slice(0, 1).map((answer) => answer.name).join(" / ")}は採用から外れました。` : "";
+  const caution = failed.length ? " 一部の候補は取得できませんでした。" : "";
   return trimToLength(`${lead}${base}${support}${caution}`, 400);
 }
 

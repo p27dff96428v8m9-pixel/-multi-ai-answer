@@ -1,6 +1,6 @@
 export type ConsultationCategory = "development" | "life" | "health" | "business" | "learning";
 export type UsageMode = "simple" | "advanced";
-export type ProviderId = "gemini-free" | "openrouter-free" | "qwen-free" | "deepseek" | "openai" | "anthropic" | "gemini" | "openrouter";
+export type ProviderId = "gemini-free" | "openrouter-free" | "qwen-free" | "deepseek" | "openai" | "anthropic" | "grok" | "openrouter";
 
 export type ProviderConfig = {
   id: ProviderId;
@@ -100,10 +100,10 @@ export const customProviders: ProviderConfig[] = [
     enabled: false,
   },
   {
-    id: "gemini",
-    name: "Gemini",
-    model: "gemini-2.5-flash",
-    role: "初心者向け整理・補足説明",
+    id: "grok",
+    name: "Grok",
+    model: "x-ai/grok-4.3",
+    role: "反対意見・別視点・鋭い指摘担当",
     costLabel: "ユーザーAPIキー",
     origin: "custom",
     enabled: false,

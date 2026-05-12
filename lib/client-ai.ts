@@ -67,7 +67,7 @@ async function callProvider(provider: ProviderConfig, category: ConsultationCate
 
   if (provider.id === "openai") return callOpenAI(provider, category, question, key);
   if (provider.id === "anthropic") return callAnthropic(provider, category, question, key);
-  if (provider.id === "gemini") return callGemini(provider, category, question, key);
+  if (provider.id === "grok") return callGrok(provider, category, question, key);
   if (provider.id === "openrouter") return callOpenRouter(provider, category, question, key);
   if (provider.id === "deepseek") return callDeepSeek(provider, category, question, key);
 
@@ -178,6 +178,11 @@ async function callOpenRouter(provider: ProviderConfig, category: ConsultationCa
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenRouterから本文を取得できませんでした。" };
 }
 
+async function callGrok(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
+  const grokProvider = provider.id === "grok" ? { ...provider, model: provider.model || "x-ai/grok-4.3" } : provider;
+  return callOpenRouter(grokProvider, category, question, apiKey);
+}
+
 async function callDeepSeek(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
   const model = provider.model || "deepseek-chat";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
@@ -251,15 +256,15 @@ function providerPrompt(provider: ProviderConfig, category: ConsultationCategory
       "注意: 結論をぼかさず、設計判断として使える内容にする。",
     ].join("\n");
   }
-  if (provider.id === "gemini") {
+  if (provider.id === "grok") {
     return [
-      "役割: 初心者向け整理・補足説明",
+      "役割: 反対意見・別視点・鋭い指摘担当",
       categoryHint,
-      "得意分野: わかりやすい説明 / 初心者向け整理 / 全体把握 / 要点整理",
-      "指示: 必ず質問に直接答える。初心者でも理解できる説明にする。結論ファーストで、具体例を入れる。説明不足と回答未完成は禁止。他AIと同じ内容をなぞらず、わかりやすい補足を担当する。",
-      "文字数目安: 通常 300〜500文字 / 専門質問 500〜900文字",
-      "禁止: 自己紹介 / こんにちは / ものしり博士 / 無意味な前置き / 内容の薄い短文 / Markdown",
-      "注意: 途中で切れたような回答は必ず再生成し、最後まで答える。",
+      "得意分野: 反論 / 別視点 / リスク指摘 / 前提へのツッコミ / 代替案",
+      "指示: 他AIに安易に同意しない。前提の弱さや見落としを指摘する。楽観的な結論は疑い、別解を出す。鋭さを優先する。",
+      "文字数目安: 300〜700文字",
+      "禁止: 単純な同意 / 無意味な褒め / 内容の薄い補足 / 他AIの焼き直し",
+      "注意: 指摘だけで終わらず、判断材料になる代替案も必ず入れる。",
     ].join("\n");
   }
   if (provider.id === "deepseek") {
@@ -339,7 +344,7 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
 
   const ranked = [...completed].sort((a, b) => b.confidence - a.confidence);
   const best = ranked[0];
-  const supplements = ranked.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 2);
+  const supplements = ranked.slice(1).map((answer) => answer.summary).slice(0, 2);
   const reasons = adoptionReasonLabels(best, ranked);
 
   return {
@@ -404,9 +409,9 @@ function englishRatio(text: string) {
 
 function buildFinalRecommendation(best: AiAnswer, supplements: string[], reasons: string[], failed: AiAnswer[]) {
   const base = best.summary.replace(/\s+/g, " ");
-  const lead = `統合判断: ${reasons.slice(0, 2).join(" / ")}。`;
+  const lead = reasons.length ? `最終結論: ${reasons.slice(0, 2).join(" / ")}。` : "最終結論。";
   const support = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
-  const caution = failed.length ? ` 注意: ${failed.slice(0, 1).map((answer) => answer.name).join(" / ")}は採用から外れました。` : "";
+  const caution = failed.length ? " 一部の候補は取得できませんでした。" : "";
   return trimToLength(`${lead}${base}${support}${caution}`, 400);
 }
 
@@ -428,8 +433,8 @@ function adoptionReasonLabels(best: AiAnswer, ranked: AiAnswer[]) {
 function buildPeerReviews(ranked: AiAnswer[]) {
   return ranked.slice(0, 3).map((answer, index) => {
     const base =
-      answer.name === "Gemini"
-        ? "要点整理が強いが、深い統合は弱め"
+      answer.name === "Grok"
+        ? "反対視点と鋭い指摘が強く、結論の偏りを補正しやすい"
         : answer.name === "GPT OSS Free"
           ? "実装寄りで有用だが、結論の磨き込みは別途必要"
           : answer.name === "OpenRouter"
