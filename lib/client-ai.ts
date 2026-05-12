@@ -25,7 +25,7 @@ export async function askAdvancedProviders(input: ClientAskInput): Promise<Analy
   const results = await Promise.all(
     activeProviders.map((provider) => callProvider(provider, input.category, input.question, input.customKeys[provider.id] ?? "")),
   );
-  const answers = results.map((result, index) => toAnswer(result, index));
+  const answers = results.map((result) => toAnswer(result));
 
   return {
     question: input.question,
@@ -46,7 +46,7 @@ export async function askSimpleRelay(input: Omit<ClientAskInput, "customKeys">):
   const relay = getSimpleRelayUrl();
   const protocol = globalThis.location?.protocol ?? "";
   if (!relay && protocol.startsWith("capacitor")) {
-    throw new Error("APKの簡単モードでは、NEXT_PUBLIC_SIMPLE_RELAY_URL に公開中継サーバーのURLを設定してビルドする必要があります。");
+    throw new Error("APKの簡単モードでは `NEXT_PUBLIC_SIMPLE_RELAY_URL` に公開中の中継サーバーURLを設定してください。");
   }
 
   const endpoint = relay ? `${relay}/api/ask` : "/api/ask";
@@ -71,11 +71,11 @@ async function callProvider(provider: ProviderConfig, category: ConsultationCate
   if (provider.id === "openrouter") return callOpenRouter(provider, category, question, key);
   if (provider.id === "deepseek") return callDeepSeek(provider, category, question, key);
 
-  return { provider, error: `${provider.name}: ブラウザからの直接呼び出しは未対応です。` };
+  return { provider, error: `${provider.name}: ブラウザからの呼び出しは未対応です。` };
 }
 
 async function callOpenAI(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
-  const model = "gpt-4.1-mini";
+  const model = provider.model || "gpt-4.1-mini";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -85,49 +85,55 @@ async function callOpenAI(provider: ProviderConfig, category: ConsultationCatego
     body: JSON.stringify({
       model,
       instructions: systemInstruction(),
-      input: buildPrompt(question, provider),
+      input: buildPrompt(question, provider, category),
       temperature: 0.4,
-      max_output_tokens: 700,
+      max_output_tokens: 900,
     }),
   });
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { output_text?: string; model?: string };
   const content = data.output_text?.trim();
-  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenAIからテキスト回答を取得できませんでした。" };
+  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenAIから本文を取得できませんでした。" };
 }
 
 async function callAnthropic(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
-  const model = "claude-sonnet-4-5";
+  const model = provider.model || "claude-sonnet-4-5";
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model,
-      max_tokens: 700,
+      max_tokens: 900,
       system: systemInstruction(),
-      messages: [{ role: "user", content: buildPrompt(question, provider) }],
+      messages: [{ role: "user", content: buildPrompt(question, provider, category) }],
     }),
   });
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { content?: Array<{ text?: string }>; model?: string };
   const content = data.content?.map((item) => item.text ?? "").join("").trim();
-  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "Claudeからテキスト回答を取得できませんでした。" };
+  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "Claudeから本文を取得できませんでした。" };
 }
 
 async function callGemini(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
-  const model = "gemini-2.5-flash";
-  const first = await callGeminiModel(provider, question, apiKey, model, false);
+  const model = provider.model || process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const first = await callGeminiModel(provider, category, question, apiKey, model, false);
   if (first.content && scoreAnswer(cleanAnswerText(first.content)) >= 65) return first;
-  if (first.content) return callGeminiModel(provider, question, apiKey, model, true);
+  if (first.content) return callGeminiModel(provider, category, question, apiKey, model, true);
   return first;
 }
 
-async function callGeminiModel(provider: ProviderConfig, question: string, apiKey: string, model: string, retry: boolean): Promise<ProviderCallResult> {
+async function callGeminiModel(
+  provider: ProviderConfig,
+  category: ConsultationCategory,
+  question: string,
+  apiKey: string,
+  model: string,
+  retry: boolean,
+): Promise<ProviderCallResult> {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: {
@@ -135,18 +141,18 @@ async function callGeminiModel(provider: ProviderConfig, question: string, apiKe
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${retry ? "前回の回答が短すぎるか未完成でした。挨拶なしで、結論から、具体例を含めて最後まで回答してください。\n\n" : ""}${buildPrompt(question, provider)}` }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 700 },
+      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${retry ? "前回の回答が短すぎるか未完成でした。挨拶なしで、結論から、具体例を含めて最後まで回答してください。\n\n" : ""}${buildPrompt(question, provider, category)}` }] }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 900 },
     }),
   });
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   const content = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
-  return content ? { provider: { ...provider, model }, content } : { provider, error: "Geminiからテキスト回答を取得できませんでした。" };
+  return content ? { provider: { ...provider, model }, content } : { provider, error: "Geminiから本文を取得できませんでした。" };
 }
 
 async function callOpenRouter(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
-  const model = "openrouter/auto";
+  const model = provider.model || "openrouter/auto";
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -159,21 +165,21 @@ async function callOpenRouter(provider: ProviderConfig, category: ConsultationCa
       model,
       messages: [
         { role: "system", content: systemInstruction() },
-        { role: "user", content: buildPrompt(question, provider) },
+        { role: "user", content: buildPrompt(question, provider, category) },
       ],
       temperature: 0.4,
-      max_tokens: 700,
+      max_tokens: 900,
     }),
   });
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; model?: string };
   const content = data.choices?.[0]?.message?.content?.trim();
-  if (content && englishRatio(content) > 0.18) return { provider: { ...provider, model }, error: "日本語以外の回答が多いため再試行します。" };
-  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenRouterからテキスト回答を取得できませんでした。" };
+  if (content && englishRatio(content) > 0.18) return { provider: { ...provider, model }, error: "英語混入が多いため再取得が必要です。" };
+  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenRouterから本文を取得できませんでした。" };
 }
 
 async function callDeepSeek(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
-  const model = "deepseek-chat";
+  const model = provider.model || "deepseek-chat";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
@@ -184,60 +190,119 @@ async function callDeepSeek(provider: ProviderConfig, category: ConsultationCate
       model,
       messages: [
         { role: "system", content: systemInstruction() },
-        { role: "user", content: buildPrompt(question, provider) },
+        { role: "user", content: buildPrompt(question, provider, category) },
       ],
       temperature: 0.4,
-      max_tokens: 700,
+      max_tokens: 900,
     }),
   });
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; model?: string };
   const content = data.choices?.[0]?.message?.content?.trim();
-  if (content && englishRatio(content) > 0.18) return { provider: { ...provider, model }, error: "日本語以外の回答が多いため再試行します。" };
-  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "DeepSeekからテキスト回答を取得できませんでした。" };
+  if (content && englishRatio(content) > 0.18) return { provider: { ...provider, model }, error: "英語混入が多いため再取得が必要です。" };
+  return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "DeepSeekから本文を取得できませんでした。" };
 }
 
 function systemInstruction() {
-  return "日本語のみで回答してください。挨拶、自己紹介、Markdown、表は使わず、質問に直接答えてください。結論から書き、具体例を含め、途中で終わらせないでください。";
+  return [
+    "日本語のみで回答してください。",
+    "挨拶、自己紹介、キャラ口調、Markdown、表は不要です。",
+    "結論から書き、途中で終わらず最後まで回答してください。",
+    "他のAIと同じ内容をなぞらず、このAIならではの視点を出してください。",
+    "短く無難にまとめるより、実用性と完成度を優先してください。",
+  ].join("\n");
 }
 
-function buildPrompt(question: string, provider: ProviderConfig) {
-  return [providerPrompt(provider), "", "質問:", question].join("\n");
+function buildPrompt(question: string, provider: ProviderConfig, category: ConsultationCategory) {
+  return [providerPrompt(provider, category), "", "質問:", question].join("\n");
 }
 
-function providerPrompt(provider: ProviderConfig) {
-  if (provider.id === "gemini" || provider.id === "gemini-free") {
+function providerPrompt(provider: ProviderConfig, category: ConsultationCategory) {
+  const categoryHint =
+    category === "development"
+      ? "開発・実装の相談です。コード設計や手順が役立ちます。"
+      : category === "health"
+        ? "健康・食事の相談です。一般情報として整理し、診断は避けてください。"
+        : category === "business"
+          ? "業務・意思決定の相談です。実務で使える判断材料を重視してください。"
+          : category === "learning"
+            ? "学習の相談です。理解の順番と学びやすさを重視してください。"
+            : "生活の相談です。実用性と分かりやすさを重視してください。";
+
+  if (provider.id === "openai") {
     return [
-      "役割: 整理初心者向け解説担当。",
-      "わかりやすさと読みやすさを最優先し、専門用語を減らしてください。",
-      "自己紹介、挨拶、キャラ口調は禁止です。",
-      "通常質問は250〜450文字、開発専門質問は400〜900文字を目安にしてください。",
-      "必ず質問に直接答え、具体例を1つ以上入れてください。",
+      "役割: 実装・整理・推論補助",
+      categoryHint,
+      "得意分野: ロジカル整理 / 実装方法 / 推論 / 問題分解 / 実用的提案",
+      "指示: 結論から書く。実用性重視。開発質問ではコード設計を重視する。長文OK。実際に使える内容を優先する。",
+      "禁止: 無駄な前置き / 自己紹介 / キャラ口調 / 他AIの繰り返し",
+      "文字数目安: 通常 350〜700文字 / 開発質問 700〜1200文字",
+      "注意: 他のAIと同じ内容を繰り返さず、このAIならではの実装・整理・推論を出す。",
     ].join("\n");
   }
-  if (provider.id === "openrouter" || provider.id === "openrouter-free") {
+  if (provider.id === "anthropic") {
     return [
-      "役割: 批判補足リスク担当。",
-      "別視点、注意点、デメリット、セキュリティ、リスクを中心に答えてください。",
-      "必ず自然な日本語のみで回答し、英語や翻訳調を避けてください。",
-      "Markdown、表、英語見出しは禁止です。",
+      "役割: 設計・文章・注意点の補助",
+      categoryHint,
+      "得意分野: UX / 設計思想 / 読みやすい説明 / リスク整理 / 長文整理",
+      "指示: ユーザー視点を重視する。設計の欠点も指摘する。読みやすさを意識し、抽象と具体を両立する。",
+      "禁止: 曖昧な結論 / 過剰な遠回し表現 / 他AIの繰り返し",
+      "文字数目安: 400〜800文字",
+      "注意: 結論をぼかさず、設計判断として使える内容にする。",
+    ].join("\n");
+  }
+  if (provider.id === "gemini") {
+    return [
+      "役割: 初心者向け整理・補足説明",
+      categoryHint,
+      "得意分野: わかりやすい説明 / 初心者向け整理 / 全体把握 / 要点整理",
+      "指示: 必ず質問に直接答える。初心者でも理解できる説明にする。結論ファーストで、具体例を入れる。説明不足と回答未完成は禁止。他AIと同じ内容をなぞらず、わかりやすい補足を担当する。",
+      "文字数目安: 通常 300〜500文字 / 専門質問 500〜900文字",
+      "禁止: 自己紹介 / こんにちは / ものしり博士 / 無意味な前置き / 内容の薄い短文 / Markdown",
+      "注意: 途中で切れたような回答は必ず再生成し、最後まで答える。",
+    ].join("\n");
+  }
+  if (provider.id === "deepseek") {
+    return [
+      "役割: 低コスト推論・開発相談・別解提示",
+      categoryHint,
+      "得意分野: 別アプローチ / コスト意識 / 実験的提案 / 開発相談 / 実装アイデア",
+      "指示: 他AIと違う視点を出す。コスパ視点を含める。開発現実性を意識し、代替案も提示する。",
+      "禁止: 他AIの繰り返し / 内容の薄い同意",
+      "注意: 実装案は安さだけでなく、現実に動くかまで含めて評価する。",
+    ].join("\n");
+  }
+  if (provider.id === "openrouter") {
+    return [
+      "役割: 補足・批判・比較・追加視点",
+      categoryHint,
+      "得意分野: 別モデル視点 / 批判 / リスク / 補足知識 / 比較",
+      "指示: 他AIの弱点も指摘する。別視点を必ず追加する。補足情報を出し、リスクも説明する。",
+      "日本語ルール: 自然な日本語のみ。英語禁止。翻訳調禁止。Markdown禁止。",
+      "注意: 反対意見や注意点を曖昧にせず、判断材料として使える形で書く。",
     ].join("\n");
   }
   if (provider.id === "qwen-free") {
     return [
-      "役割: 技術実装具体例担当。",
-      "具体例、実装手順、現実的な進め方を深く説明してください。",
-      "開発系の質問では詳細な説明を歓迎します。",
-      "日本語のみで回答し、Markdown記号や表は使わないでください。",
+      "役割: 実装・整理・推論補助",
+      categoryHint,
+      "得意分野: ロジカル整理 / 実装方法 / 推論 / 問題分解 / 実用的提案",
+      "指示: 結論から書く。開発質問ではコード設計を重視する。長文でもよい。実際に使える内容を優先する。",
+      "禁止: 無意味な前置き / 自己紹介 / キャラ口調 / Markdown",
+      "注意: 他AIと内容が被る場合は、実装の具体化や整理に寄せて差別化する。",
     ].join("\n");
   }
-  return "以下の質問に、分かりやすく実用的に答えてください。";
+  return [
+    "役割: 補足・比較・追加視点",
+    categoryHint,
+    "指示: 他AIと違う視点を出してください。",
+  ].join("\n");
 }
 
-function toAnswer(result: ProviderCallResult, index: number): AiAnswer {
+function toAnswer(result: ProviderCallResult): AiAnswer {
   const hasError = Boolean(result.error);
   const content = cleanAnswerText(result.content ?? "");
-  const summary = hasError ? "このAIは現在利用できません。APIキー設定または認証設定を確認してください。" : firstParagraph(content);
+  const summary = hasError ? "このAIは今回のモードでは利用できませんでした。APIキーや接続設定を確認してください。" : firstParagraph(content);
   const score = hasError ? 0 : scoreAnswer(content);
   return {
     id: result.provider.id,
@@ -259,14 +324,14 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
   const failed = answers.filter((answer) => answer.status === "error");
   const safetyNote =
     category === "health"
-      ? "これは一般的な健康・食事情報であり、診断や治療ではありません。強い症状や長引く不調がある場合は専門家に相談してください。"
+      ? "これは一般的な情報です。診断や治療ではありません。症状が強い場合や不安がある場合は医療機関に相談してください。"
       : undefined;
 
   if (completed.length === 0) {
     return {
-      recommendation: "有効なAPIキーを設定してから再実行してください。",
-      reason: "詳細モードでは、入力されたユーザーAPIキーを使って各AIへ直接問い合わせます。",
-      alternatives: ["別のAIキーを使う", "簡単モードで中継サーバーを使う", "キーを保存せず今回だけ入力する"],
+      recommendation: "有効なAI回答が得られませんでした。APIキーと接続設定を確認して、もう一度実行してください。",
+      reason: "詳細モードでは、各AIに設定されたAPIキーが必要です。回答が取得できないと合議も作れません。",
+      alternatives: ["有効なAPIキーを設定する", "使うAIを1つ以上有効化する", "接続先の制限やエラー内容を確認する"],
       cautions: failed.map((answer) => `${answer.name}: ${answer.errorMessage ?? publicProviderError("advanced")}`),
       safetyNote,
     };
@@ -275,13 +340,16 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
   const ranked = [...completed].sort((a, b) => b.confidence - a.confidence);
   const best = ranked[0];
   const supplements = ranked.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 2);
-  const adoptionReasons = adoptionReasonLabels(best, ranked);
+  const reasons = adoptionReasonLabels(best, ranked);
 
   return {
     recommendation: buildFinalRecommendation(best, supplements),
-    reason: adoptionReasons.join(" / "),
+    reason: reasons.join(" / "),
     alternatives: buildPeerReviews(ranked),
-    cautions: [...failed.map((answer) => `${answer.name}: 利用できなかったため不採用`), ...ranked.slice(1).map((answer) => `${answer.name}: ${nonAdoptionReason(answer, best)}`)].slice(0, 4),
+    cautions: [
+      ...failed.map((answer) => `${answer.name}: 取得失敗または制限により採用できませんでした`),
+      ...ranked.slice(1).map((answer) => `${answer.name}: ${nonAdoptionReason(answer, best)}`),
+    ].slice(0, 4),
     safetyNote,
   };
 }
@@ -310,16 +378,22 @@ function cleanAnswerText(text: string) {
 
 function scoreAnswer(text: string) {
   const length = text.length;
-  const sentenceCount = (text.match(/。/g) ?? []).length;
-  const hasExample = /例えば|例として|具体例|手順|まず|次に|場合/.test(text);
+  const sentenceCount = (text.match(/[。！？]/g) ?? []).length;
+  const hasExample = /(?:例|たとえば|例えば|具体例|たとえると)/.test(text);
+  const hasConclusion = /(?:結論|要するに|おすすめ|結局)/.test(text);
+  const hasStructure = /\n/.test(text) || /\d+\./.test(text);
   const englishRatioValue = englishRatio(text);
-  const incomplete = /説明します。?$|以下です。?$|紹介します。?$|[:：]\s*$/.test(text) || sentenceCount < 2;
-  let score = 58;
-  if (length >= 220) score += 12;
-  if (length >= 400) score += 8;
-  if (sentenceCount >= 4) score += 8;
+  const incomplete = /(?:説明します|以下|途中|...)\s*$/.test(text) || sentenceCount < 2;
+
+  let score = 52;
+  if (length >= 180) score += 10;
+  if (length >= 360) score += 8;
+  if (length > 900) score -= 4;
+  if (sentenceCount >= 3) score += 6;
   if (hasExample) score += 8;
-  if (englishRatioValue > 0.18) score -= 12;
+  if (hasConclusion) score += 6;
+  if (hasStructure) score += 4;
+  if (englishRatioValue > 0.18) score -= 14;
   if (incomplete) score -= 20;
   return Math.max(45, Math.min(96, score));
 }
@@ -330,42 +404,52 @@ function englishRatio(text: string) {
 
 function buildFinalRecommendation(best: AiAnswer, supplements: string[]) {
   const base = best.summary.replace(/\s+/g, " ");
-  const extra = supplements.length ? `補足として、${supplements.join("。")}` : "";
-  return trimToLength(`${base}${extra ? ` ${extra}` : ""}`, 350);
+  const extra = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
+  return trimToLength(`${base}${extra}`, 400);
 }
 
 function trimToLength(text: string, max: number) {
   if (text.length <= max) return text;
   const sliced = text.slice(0, max);
   const lastPeriod = sliced.lastIndexOf("。");
-  return `${(lastPeriod > 160 ? sliced.slice(0, lastPeriod + 1) : sliced).trim()}…`;
+  return `${(lastPeriod > 120 ? sliced.slice(0, lastPeriod + 1) : sliced).trim()}…`;
 }
 
 function adoptionReasonLabels(best: AiAnswer, ranked: AiAnswer[]) {
-  const reasons = ["質問への適合度が高い", "内容の完成度が高い"];
-  if (best.confidence >= 82) reasons.push("具体性が高い");
-  if (ranked.length > 1) reasons.push("他AIの補足と統合しやすい");
+  const reasons = ["質問への適合性が高い", "内容の密度が高い"];
+  if (best.confidence >= 82) reasons.push("完成度が高い");
+  if (ranked.length > 1) reasons.push("他AIの有用な補足と整合した");
   return reasons.slice(0, 4);
 }
 
 function buildPeerReviews(ranked: AiAnswer[]) {
-  if (ranked.length <= 1) return ["他AIの有効回答が少ないため、成功した回答を中心に整理しました。"];
   return ranked.slice(0, 3).map((answer, index) => {
-    if (index === 0) return `${answer.name}: 最も完成度が高く、最終結論の土台に採用`;
-    return `${answer.name}: 有用な補足として一部採用`;
+    const base =
+      answer.name === "Gemini"
+        ? "初心者向けに分かりやすいが、具体性はやや弱い"
+        : answer.name === "GPT OSS Free"
+          ? "実装寄りで有用だが、長くなりやすい"
+          : answer.name === "OpenRouter"
+            ? "補足とリスク確認が強いが、結論の主役にはしにくい"
+            : answer.name === "Claude"
+              ? "設計と文章の整理が強く、UXや注意点の把握に向く"
+              : answer.name === "DeepSeek"
+                ? "別解とコスト感が有用だが、採用前の検証が必要"
+                : "ロジカルで実装に強く、統合の軸に向く";
+    return index === 0 ? `${answer.name}: ${base}` : `${answer.name}: ${base}`;
   });
 }
 
 function nonAdoptionReason(answer: AiAnswer, best: AiAnswer) {
-  if (answer.confidence + 8 < best.confidence) return "内容密度または完成度で主採用には届かなかった";
-  return "主結論ではなく補足意見として採用";
+  if (answer.confidence + 8 < best.confidence) return "最終結論の軸にするには情報密度が少し足りませんでした";
+  return "補足としては有用ですが、主役にするほどではありませんでした";
 }
 
 function parseApiResponse(text: string) {
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error("中継サーバーから正常な応答を取得できませんでした。時間を置いて再試行してください。");
+    throw new Error("中継サーバーから正しいJSONを受け取れませんでした。時間をおいて再試行してください。");
   }
 }
 
@@ -375,13 +459,30 @@ async function sanitizeProviderError(response: Response, mode: "simple" | "advan
 }
 
 function publicProviderError(mode: "simple" | "advanced", raw = "", status?: number) {
+  const detail = extractErrorDetail(raw);
   if (status === 401 || /missing authentication|unauthorized|401|missing api key/i.test(raw)) {
     return mode === "simple"
-      ? "このAIは現在利用できません。中継サーバー側の認証設定が必要です。"
-      : "このAIは現在利用できません。APIキーが未入力、または認証情報が正しくない可能性があります。";
+      ? "このAIは現在使用できません。中継サーバー側の設定を確認してください。"
+      : "このAIは現在使用できません。APIキーが未入力か、認証情報が正しくありません。";
+  }
+
+  if (detail) {
+    return mode === "simple"
+      ? "このAIは現在一時的に利用できません。別のAIの回答を確認してください。"
+      : "このAIは現在一時的に利用できません。APIキーや接続設定を確認してください。";
   }
 
   return mode === "simple"
-    ? "このAIは現在一時的に利用できません。他のAIの回答をご確認ください。"
-    : "このAIは現在利用できません。APIキー設定または認証設定を確認してください。";
+    ? "このAIは現在一時的に利用できません。別のAIの回答を確認してください。"
+    : "このAIは現在一時的に利用できません。APIキーや接続設定を確認してください。";
+}
+
+function extractErrorDetail(raw: string) {
+  if (!raw.trim()) return "";
+  try {
+    const parsed = JSON.parse(raw) as { error?: { message?: string; code?: string | number }; message?: string; code?: string | number };
+    return parsed.error?.message || parsed.message || String(parsed.error?.code || parsed.code || "");
+  } catch {
+    return raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  }
 }
