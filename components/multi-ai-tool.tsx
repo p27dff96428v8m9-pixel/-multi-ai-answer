@@ -140,6 +140,7 @@ export function MultiAiTool() {
             });
 
       setResult(data);
+      setShowFinalAnswer(true);
       saveHistoryEntry(data);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "回答の取得に失敗しました。");
@@ -212,8 +213,8 @@ export function MultiAiTool() {
             {!isRunning && !result ? <EmptyOutput /> : null}
             {result ? (
               <>
-                <ConsensusAction disabled={completedAnswers.length === 0} onClick={() => setShowFinalAnswer(true)} />
                 {showFinalAnswer ? <FinalAnswerCard result={result} /> : null}
+                {!showFinalAnswer ? <ConsensusAction disabled={completedAnswers.length === 0} onClick={() => setShowFinalAnswer(true)} /> : null}
                 <AnswerList answers={result.answers} />
               </>
             ) : null}
@@ -404,11 +405,13 @@ function AnswerList({ answers }: { answers: AnalysisResult["answers"] }) {
   const visibleAnswers = completed.length > 0 ? completed : answers;
 
   return (
-    <section className="space-y-3">
-      <div>
-        <p className="text-sm font-semibold text-[#4f6f56]">各AIの回答</p>
-        <h2 className="mt-1 text-xl font-bold text-[#17211b]">回答一覧</h2>
-      </div>
+    <details className="rounded-lg border border-[#b9d4cc] bg-white p-4 shadow-md">
+      <summary className="cursor-pointer text-sm font-bold text-[#28614d]">AIの議論を見る</summary>
+      <div className="mt-4 space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-[#4f6f56]">AI会議ログ</p>
+          <h2 className="mt-1 text-xl font-bold text-[#17211b]">各AIの長文回答</h2>
+        </div>
       {failed.length > 0 && completed.length > 0 ? <SkippedProvidersNotice count={failed.length} /> : null}
       <div className="grid gap-3">
         {visibleAnswers.map((answer) => (
@@ -433,7 +436,8 @@ function AnswerList({ answers }: { answers: AnalysisResult["answers"] }) {
           </article>
         ))}
       </div>
-    </section>
+      </div>
+    </details>
   );
 }
 
@@ -462,7 +466,7 @@ function ConsensusAction({ disabled, onClick }: { disabled: boolean; onClick: ()
       onClick={onClick}
       className="w-full rounded-lg border border-[#7edfc3]/40 bg-[#10211d] px-4 py-4 text-sm font-bold text-white shadow-lg transition hover:bg-[#153b31] disabled:cursor-not-allowed disabled:bg-[#8ca897]"
     >
-      AI合議で最適解を生成する
+      AI会議で最終結論を生成する
     </button>
   );
 }
@@ -471,13 +475,13 @@ function FinalAnswerCard({ result }: { result: AnalysisResult }) {
   return (
     <section className="rounded-lg border border-[#79cdb6] bg-[#e8f8f3] p-5 shadow-lg">
       <p className="text-sm font-semibold text-[#2f8060]">AI Council Result</p>
-      <h2 className="mt-1 text-2xl font-bold text-[#10211d]">合議でまとめた最終回答</h2>
+      <h2 className="mt-1 text-2xl font-bold text-[#10211d]">最終結論</h2>
       {result.conclusion.safetyNote ? <StatusBox title="注意" body={result.conclusion.safetyNote} tone="warning" /> : null}
       <div className="mt-4 grid gap-3">
         <ConclusionBlock title="結論" body={result.conclusion.recommendation} strong />
-        <ConclusionBlock title="理由" body={result.conclusion.reason} />
-        <ConclusionList title="参考意見" items={result.conclusion.alternatives} />
-        <ConclusionList title="注意点" items={result.conclusion.cautions} />
+        <ConclusionBlock title="採用理由" body={result.conclusion.reason} />
+        <ConclusionList title="AI同士の評価" items={result.conclusion.alternatives} />
+        <ConclusionList title="不採用・補足理由" items={result.conclusion.cautions} />
       </div>
     </section>
   );

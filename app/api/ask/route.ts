@@ -93,6 +93,13 @@ async function callGemini(provider: ProviderConfig, question: string): Promise<P
   if (!apiKey) return { provider, error: publicProviderError("simple") };
 
   const model = process.env.GEMINI_MODEL || provider.model;
+  const first = await callGeminiModel(provider, question, apiKey, model, false);
+  if (first.content && scoreAnswer(cleanAnswerText(first.content)) >= 65) return first;
+  if (first.content) return callGeminiModel(provider, question, apiKey, model, true);
+  return first;
+}
+
+async function callGeminiModel(provider: ProviderConfig, question: string, apiKey: string, model: string, retry: boolean): Promise<ProviderCallResult> {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: {
@@ -100,7 +107,7 @@ async function callGemini(provider: ProviderConfig, question: string): Promise<P
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${buildPrompt(question, provider)}` }] }],
+      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${retry ? "前回の回答が短すぎるか未完成でした。挨拶なしで、結論から、具体例を含めて最後まで回答してください。\n\n" : ""}${buildPrompt(question, provider)}` }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 },
     }),
   });
@@ -150,11 +157,12 @@ async function callOpenRouterModel(provider: ProviderConfig, question: string, a
   if (!response.ok) return { provider, error: await sanitizeProviderError(response, "simple") };
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; model?: string };
   const content = data.choices?.[0]?.message?.content?.trim();
+  if (content && englishRatio(content) > 0.18) return { provider: { ...provider, model }, error: "日本語以外の回答が多いため再試行します。" };
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider: { ...provider, model }, error: "OpenRouterからテキスト回答を取得できませんでした。" };
 }
 
 function systemInstruction() {
-  return "あなたは役立つAIアシスタントです。以下の質問に、分かりやすく実用的に日本語で答えてください。";
+  return "日本語のみで回答してください。挨拶、自己紹介、Markdown、表は使わず、質問に直接答えてください。結論から書き、具体例を含め、途中で終わらせないでください。";
 }
 
 function buildPrompt(question: string, provider: ProviderConfig) {
@@ -164,14 +172,29 @@ function buildPrompt(question: string, provider: ProviderConfig) {
 function providerPrompt(provider: ProviderConfig) {
   if (provider.id === "gemini-free") {
     return [
-      "あなたは「ものしり博士」として、幅広い知識をやさしく整理して説明するAIです。",
-      "質問の意図をまず自然に読み取り、決めつけず、事実と推測を分けてください。",
-      "分からない点や前提が足りない点は、無理に断定せず、確認すべき点として短く示してください。",
-      "回答は日本語で、具体例を交えながら実用的にまとめてください。",
+      "役割: 整理初心者向け解説担当。",
+      "わかりやすさと読みやすさを最優先し、専門用語を減らしてください。",
+      "自己紹介、挨拶、キャラ口調は禁止です。",
+      "通常質問は250〜450文字、開発専門質問は400〜900文字を目安にしてください。",
+      "必ず質問に直接答え、具体例を1つ以上入れてください。",
     ].join("\n");
   }
-  if (provider.id === "openrouter-free") return "あなたは複数の観点から補助意見を出すAIです。以下の質問に、分かりやすく実用的に答えてください。";
-  if (provider.id === "qwen-free") return "あなたは別視点から確認するAIです。以下の質問に、分かりやすく実用的に答えてください。";
+  if (provider.id === "openrouter-free") {
+    return [
+      "役割: 批判補足リスク担当。",
+      "別視点、注意点、デメリット、セキュリティ、リスクを中心に答えてください。",
+      "必ず自然な日本語のみで回答し、英語や翻訳調を避けてください。",
+      "Markdown、表、英語見出しは禁止です。",
+    ].join("\n");
+  }
+  if (provider.id === "qwen-free") {
+    return [
+      "役割: 技術実装具体例担当。",
+      "具体例、実装手順、現実的な進め方を深く説明してください。",
+      "開発系の質問では詳細な説明を歓迎します。",
+      "日本語のみで回答し、Markdown記号や表は使わないでください。",
+    ].join("\n");
+  }
   return "以下の質問に、分かりやすく実用的に答えてください。";
 }
 
@@ -200,15 +223,16 @@ function uniqueModels(models: Array<string | undefined>) {
 
 function toAnswer(result: ProviderCallResult, index: number): AiAnswer {
   const hasError = Boolean(result.error);
-  const content = result.content ?? "";
+  const content = cleanAnswerText(result.content ?? "");
   const summary = hasError ? "このAIは現在一時的に利用できません。他のAIの回答をご確認ください。" : firstParagraph(content);
+  const score = hasError ? 0 : scoreAnswer(content);
   return {
     id: result.provider.id,
     name: result.provider.name,
     model: result.provider.model,
     role: result.provider.role,
     status: hasError ? "error" : "complete",
-    confidence: hasError ? 0 : Math.max(72, 88 - index * 4),
+    confidence: score,
     summary,
     bullets: hasError ? [result.error ?? publicProviderError("simple")] : extractBullets(content, summary),
     costLabel: result.provider.costLabel,
@@ -235,11 +259,16 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
     };
   }
 
+  const ranked = [...completed].sort((a, b) => b.confidence - a.confidence);
+  const best = ranked[0];
+  const supplements = ranked.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 2);
+  const adoptionReasons = adoptionReasonLabels(best, ranked);
+
   return {
-    recommendation: completed[0].summary,
-    reason: `簡単モードで ${completed.length} 件の回答を取得しました。質問: ${question}`,
-    alternatives: completed.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 3),
-    cautions: [],
+    recommendation: buildFinalRecommendation(best, supplements),
+    reason: adoptionReasons.join(" / "),
+    alternatives: buildPeerReviews(ranked),
+    cautions: [...failed.map((answer) => `${answer.name}: 一時的に利用できなかったため不採用`), ...ranked.slice(1).map((answer) => `${answer.name}: ${nonAdoptionReason(answer, best)}`)].slice(0, 4),
     safetyNote,
   };
 }
@@ -254,6 +283,69 @@ function extractBullets(text: string, summary: string) {
     .map((line) => line.replace(/^[-*\d.\s]+/, "").trim())
     .filter((line) => line && line !== summary);
   return Array.from(new Set(lines)).slice(0, 4);
+}
+
+function cleanAnswerText(text: string) {
+  return text
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/\|/g, " ")
+    .trim();
+}
+
+function scoreAnswer(text: string) {
+  const length = text.length;
+  const sentenceCount = (text.match(/。/g) ?? []).length;
+  const hasExample = /例えば|例として|具体例|手順|まず|次に|場合/.test(text);
+  const englishRatioValue = englishRatio(text);
+  const incomplete = /説明します。?$|以下です。?$|紹介します。?$|[:：]\s*$/.test(text) || sentenceCount < 2;
+  let score = 58;
+  if (length >= 220) score += 12;
+  if (length >= 400) score += 8;
+  if (sentenceCount >= 4) score += 8;
+  if (hasExample) score += 8;
+  if (englishRatioValue > 0.18) score -= 12;
+  if (incomplete) score -= 20;
+  return Math.max(45, Math.min(96, score));
+}
+
+function englishRatio(text: string) {
+  return (text.match(/[A-Za-z]/g)?.length ?? 0) / Math.max(1, text.length);
+}
+
+function buildFinalRecommendation(best: AiAnswer, supplements: string[]) {
+  const base = best.summary.replace(/\s+/g, " ");
+  const extra = supplements.length ? `補足として、${supplements.join("。")}` : "";
+  return trimToLength(`${base}${extra ? ` ${extra}` : ""}`, 350);
+}
+
+function trimToLength(text: string, max: number) {
+  if (text.length <= max) return text;
+  const sliced = text.slice(0, max);
+  const lastPeriod = sliced.lastIndexOf("。");
+  return `${(lastPeriod > 160 ? sliced.slice(0, lastPeriod + 1) : sliced).trim()}…`;
+}
+
+function adoptionReasonLabels(best: AiAnswer, ranked: AiAnswer[]) {
+  const reasons = ["質問への適合度が高い", "内容の完成度が高い"];
+  if (best.confidence >= 82) reasons.push("具体性が高い");
+  if (ranked.length > 1) reasons.push("他AIの補足と統合しやすい");
+  return reasons.slice(0, 4);
+}
+
+function buildPeerReviews(ranked: AiAnswer[]) {
+  if (ranked.length <= 1) return ["他AIの有効回答が少ないため、成功した回答を中心に整理しました。"];
+  return ranked.slice(0, 3).map((answer, index) => {
+    if (index === 0) return `${answer.name}: 最も完成度が高く、最終結論の土台に採用`;
+    return `${answer.name}: 有用な補足として一部採用`;
+  });
+}
+
+function nonAdoptionReason(answer: AiAnswer, best: AiAnswer) {
+  if (answer.confidence + 8 < best.confidence) return "内容密度または完成度で主採用には届かなかった";
+  return "主結論ではなく補足意見として採用";
 }
 
 async function sanitizeProviderError(response: Response, mode: "simple" | "advanced") {
