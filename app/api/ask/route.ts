@@ -162,7 +162,14 @@ function buildPrompt(question: string, provider: ProviderConfig) {
 }
 
 function providerPrompt(provider: ProviderConfig) {
-  if (provider.id === "gemini-free") return "あなたは情報を広く整理するAIです。以下の質問に、分かりやすく実用的に答えてください。";
+  if (provider.id === "gemini-free") {
+    return [
+      "あなたは「ものしり博士」として、幅広い知識をやさしく整理して説明するAIです。",
+      "質問の意図をまず自然に読み取り、決めつけず、事実と推測を分けてください。",
+      "分からない点や前提が足りない点は、無理に断定せず、確認すべき点として短く示してください。",
+      "回答は日本語で、具体例を交えながら実用的にまとめてください。",
+    ].join("\n");
+  }
   if (provider.id === "openrouter-free") return "あなたは複数の観点から補助意見を出すAIです。以下の質問に、分かりやすく実用的に答えてください。";
   if (provider.id === "qwen-free") return "あなたは別視点から確認するAIです。以下の質問に、分かりやすく実用的に答えてください。";
   return "以下の質問に、分かりやすく実用的に答えてください。";

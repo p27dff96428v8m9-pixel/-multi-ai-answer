@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AnalysisResult,
   ConsultationCategory,
@@ -18,6 +18,16 @@ const SIMPLE_DESCRIPTION = "複数のAIに一度で質問し、最後に最適�
 const ADVANCED_DESCRIPTION = "入力したAPIキーを使って、選択したAIに直接問い合わせます。";
 const WARNING_TEXT = "※ APIキー・パスワードなどの機密情報は入力しないでください。";
 const initialCustomKeys = Object.fromEntries(customProviders.map((provider) => [provider.id, ""]));
+const HISTORY_KEY = "multi-ai-answer-history-v1";
+const HISTORY_LIMIT = 20;
+
+type HistoryEntry = {
+  id: string;
+  question: string;
+  generatedAt: string;
+  result: AnalysisResult;
+  locked?: boolean;
+};
 
 export function MultiAiTool() {
   const [mode, setMode] = useState<UsageMode>("simple");
@@ -28,12 +38,17 @@ export function MultiAiTool() {
   const [showFinalAnswer, setShowFinalAnswer] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const allProviders = useMemo(() => buildProviders(mode, customKeys, enabledCustomIds), [mode, customKeys, enabledCustomIds]);
   const requestProviders = useMemo(() => allProviders.filter((provider) => provider.enabled), [allProviders]);
   const completedAnswers = result?.answers.filter((answer) => answer.status === "complete") ?? [];
   const privacyRisks = useMemo(() => detectPrivacyRisks(question), [question]);
   const simpleRelayUrl = getSimpleRelayUrl();
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   function resetOutput() {
     setResult(null);
@@ -44,6 +59,43 @@ export function MultiAiTool() {
   function handleModeChange(nextMode: UsageMode) {
     setMode(nextMode);
     resetOutput();
+  }
+
+  function saveHistoryEntry(nextResult: AnalysisResult) {
+    const entry: HistoryEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      question: nextResult.question,
+      generatedAt: nextResult.generatedAt,
+      result: nextResult,
+    };
+    setHistory((current) => {
+      const next = trimHistory([entry, ...current]);
+      persistHistory(next);
+      return next;
+    });
+  }
+
+  function openHistoryEntry(entry: HistoryEntry) {
+    setQuestion(entry.question);
+    setResult(entry.result);
+    setShowFinalAnswer(true);
+    setErrorMessage("");
+  }
+
+  function clearHistory() {
+    setHistory((current) => {
+      const next = current.filter((entry) => entry.locked);
+      persistHistory(next);
+      return next;
+    });
+  }
+
+  function toggleHistoryLock(id: string) {
+    setHistory((current) => {
+      const next = trimHistory(current.map((entry) => (entry.id === id ? { ...entry, locked: !entry.locked } : entry)));
+      persistHistory(next);
+      return next;
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -88,6 +140,7 @@ export function MultiAiTool() {
             });
 
       setResult(data);
+      saveHistoryEntry(data);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "回答の取得に失敗しました。");
     } finally {
@@ -154,6 +207,7 @@ export function MultiAiTool() {
 
           <aside className="space-y-4">
             <ProviderSummary mode={mode} providers={mode === "simple" ? requestProviders : allProviders} />
+            <HistoryPanel entries={history} onOpen={openHistoryEntry} onClear={clearHistory} onToggleLock={toggleHistoryLock} />
             {mode === "advanced" ? (
               <ApiKeyPanel
                 customKeys={customKeys}
@@ -236,6 +290,55 @@ function ProviderRow({ provider, showModel }: { provider: ProviderConfig; showMo
         </span>
       </div>
     </div>
+  );
+}
+
+function HistoryPanel({
+  entries,
+  onOpen,
+  onClear,
+  onToggleLock,
+}: {
+  entries: HistoryEntry[];
+  onOpen: (entry: HistoryEntry) => void;
+  onClear: () => void;
+  onToggleLock: (id: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#4f6f56]">履歴</p>
+          <p className="mt-1 text-xs text-[#6b756d]">端末内に最大{HISTORY_LIMIT}件保存</p>
+        </div>
+        {entries.length > 0 ? (
+          <button type="button" onClick={onClear} className="rounded-md bg-[#eef1ee] px-2 py-1 text-xs font-semibold text-[#34443a]">
+            通常削除
+          </button>
+        ) : null}
+      </div>
+      {entries.length === 0 ? (
+        <p className="mt-3 text-xs leading-5 text-[#7a837c]">まだ履歴はありません。</p>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {entries.map((entry) => (
+            <div key={entry.id} className="rounded-md border border-[#e2e7e3] bg-[#fbfcfa] p-2">
+              <button type="button" onClick={() => onOpen(entry)} className="block w-full p-1 text-left">
+                <span className="block truncate text-sm font-semibold text-[#243227]">{entry.question}</span>
+                <span className="mt-1 block text-xs text-[#6b756d]">{formatHistoryDate(entry.generatedAt)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleLock(entry.id)}
+                className={`mt-2 rounded-md px-2 py-1 text-xs font-semibold ${entry.locked ? "bg-[#245f41] text-white" : "bg-[#eef1ee] text-[#34443a]"}`}
+              >
+                {entry.locked ? "保存中" : "保存"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -435,4 +538,38 @@ function ConclusionList({ title, items }: { title: string; items: string[] }) {
       </ul>
     </section>
   );
+}
+
+function loadHistory(): HistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as HistoryEntry[];
+    return Array.isArray(parsed) ? trimHistory(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistHistory(entries: HistoryEntry[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(HISTORY_KEY, JSON.stringify(trimHistory(entries)));
+}
+
+function trimHistory(entries: HistoryEntry[]) {
+  const locked = entries.filter((entry) => entry.locked);
+  const unlocked = entries.filter((entry) => !entry.locked).slice(0, Math.max(0, HISTORY_LIMIT - locked.length));
+  return [...locked, ...unlocked].sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+}
+
+function formatHistoryDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
