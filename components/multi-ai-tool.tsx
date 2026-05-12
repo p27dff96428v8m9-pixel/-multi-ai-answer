@@ -181,7 +181,7 @@ export function MultiAiTool() {
             <form className="space-y-4 rounded-lg border border-[#b9d4cc] bg-white p-4 shadow-md sm:p-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label className="flex items-center justify-between gap-3 text-sm font-semibold text-[#243227]" htmlFor="question">
-                  <span>司令入力</span>
+                  <span>指令入力</span>
                   <span className="rounded-md bg-[#e8f4ef] px-2 py-1 text-xs text-[#28614d]">AIチームへ送信</span>
                 </label>
                 <textarea
@@ -336,7 +336,7 @@ function HistoryPanel({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[#4f6f56]">履歴</p>
-          <p className="mt-1 text-xs text-[#6b756d]">端末内に最大{HISTORY_LIMIT}件保存</p>
+          <p className="mt-1 text-xs text-[#6b756d]">端末内に最大{HISTORY_LIMIT}件保存。開くとAPIを消費しません。</p>
         </div>
         {entries.length > 0 ? (
           <button type="button" onClick={onClear} className="rounded-md bg-[#eef1ee] px-2 py-1 text-xs font-semibold text-[#34443a]">
@@ -348,21 +348,38 @@ function HistoryPanel({
         <p className="mt-3 text-xs leading-5 text-[#7a837c]">まだ履歴はありません。</p>
       ) : (
         <div className="mt-3 grid gap-2">
-          {entries.map((entry) => (
-            <div key={entry.id} className="rounded-md border border-[#e2e7e3] bg-[#fbfcfa] p-2">
-              <button type="button" onClick={() => onOpen(entry)} className="block w-full p-1 text-left">
-                <span className="block truncate text-sm font-semibold text-[#243227]">{entry.question}</span>
-                <span className="mt-1 block text-xs text-[#6b756d]">{formatHistoryDate(entry.generatedAt)}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleLock(entry.id)}
-                className={`mt-2 rounded-md px-2 py-1 text-xs font-semibold ${entry.locked ? "bg-[#245f41] text-white" : "bg-[#eef1ee] text-[#34443a]"}`}
-              >
-                {entry.locked ? "保存中" : "保存"}
-              </button>
-            </div>
-          ))}
+          {entries.map((entry) => {
+            const completedCount = entry.result.answers.filter((answer) => answer.status === "complete").length;
+            return (
+              <div key={entry.id} className="rounded-md border border-[#e2e7e3] bg-[#fbfcfa] p-2">
+                <button type="button" onClick={() => onOpen(entry)} className="block w-full rounded-md p-1 text-left transition hover:bg-[#eef5ef]">
+                  <span className="block truncate text-sm font-semibold text-[#243227]">{entry.question}</span>
+                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[#4f5c54]">{entry.result.conclusion.recommendation}</span>
+                  <span className="mt-2 flex flex-wrap gap-1 text-[11px] font-semibold text-[#2f6b49]">
+                    <span className="rounded bg-[#e8f4ef] px-2 py-1">最終結論</span>
+                    <span className="rounded bg-[#e8f4ef] px-2 py-1">AI会議ログ {completedCount}件</span>
+                  </span>
+                  <span className="mt-2 block text-xs text-[#6b756d]">{formatHistoryDate(entry.generatedAt)}</span>
+                </button>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(entry)}
+                    className="rounded-md bg-[#153b31] px-2 py-1 text-xs font-semibold text-white"
+                  >
+                    履歴を開く
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleLock(entry.id)}
+                    className={`rounded-md px-2 py-1 text-xs font-semibold ${entry.locked ? "bg-[#245f41] text-white" : "bg-[#eef1ee] text-[#34443a]"}`}
+                  >
+                    {entry.locked ? "保存中" : "保存"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
@@ -394,7 +411,7 @@ function LoadingOutput({ providers }: { providers: ProviderConfig[] }) {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs leading-5 text-[#b7cbc4]">回答取得後、成功したAIだけを使って合議できます。</p>
+      <p className="mt-4 text-xs leading-5 text-[#b7cbc4]">回答取得後、成功したAIだけを使って合議します。</p>
     </section>
   );
 }
@@ -412,30 +429,30 @@ function AnswerList({ answers }: { answers: AnalysisResult["answers"] }) {
           <p className="text-sm font-semibold text-[#4f6f56]">AI会議ログ</p>
           <h2 className="mt-1 text-xl font-bold text-[#17211b]">各AIの長文回答</h2>
         </div>
-      {failed.length > 0 && completed.length > 0 ? <SkippedProvidersNotice count={failed.length} /> : null}
-      <div className="grid gap-3">
-        {visibleAnswers.map((answer) => (
-          <article key={answer.id} className="rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-[#17211b]">{answer.name}</h3>
-                <p className="mt-1 text-xs font-semibold text-[#6b756d]">{answer.status === "error" ? "エラー" : answer.costLabel}</p>
+        {failed.length > 0 && completed.length > 0 ? <SkippedProvidersNotice count={failed.length} /> : null}
+        <div className="grid gap-3">
+          {visibleAnswers.map((answer) => (
+            <article key={answer.id} className="rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-[#17211b]">{answer.name}</h3>
+                  <p className="mt-1 text-xs font-semibold text-[#6b756d]">{answer.status === "error" ? "エラー" : answer.costLabel}</p>
+                </div>
+                <span className={`rounded-md px-2 py-1 text-xs font-semibold ${answer.status === "error" ? "bg-[#fff1ef] text-[#8a312a]" : "bg-[#f1f4f2] text-[#2f6b49]"}`}>
+                  {answer.status === "error" ? "失敗" : `${answer.confidence}%`}
+                </span>
               </div>
-              <span className={`rounded-md px-2 py-1 text-xs font-semibold ${answer.status === "error" ? "bg-[#fff1ef] text-[#8a312a]" : "bg-[#f1f4f2] text-[#2f6b49]"}`}>
-                {answer.status === "error" ? "失敗" : `${answer.confidence}%`}
-              </span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#4b5a50]">{answer.summary}</p>
-            <ul className="mt-4 space-y-2">
-              {answer.bullets.map((bullet) => (
-                <li key={bullet} className="rounded-md bg-[#f8faf7] px-3 py-2 text-sm leading-6 text-[#34443a]">
-                  {bullet}
-                </li>
-              ))}
-            </ul>
-          </article>
-        ))}
-      </div>
+              <p className="mt-3 whitespace-pre-line text-sm leading-6 text-[#4b5a50]">{answer.summary}</p>
+              <ul className="mt-4 space-y-2">
+                {answer.bullets.map((bullet) => (
+                  <li key={bullet} className="rounded-md bg-[#f8faf7] px-3 py-2 text-sm leading-6 text-[#34443a]">
+                    {bullet}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
       </div>
     </details>
   );
@@ -451,8 +468,8 @@ function SkippedProvidersNotice({ count }: { count: number }) {
 
 function providerActionLabel(provider: ProviderConfig) {
   if (provider.id === "gemini-free" || provider.id === "gemini") return "知識を整理中";
-  if (provider.id === "openrouter-free" || provider.id === "openrouter") return "補助意見を生成中";
-  if (provider.id === "qwen-free") return "別視点で検証中";
+  if (provider.id === "openrouter-free" || provider.id === "openrouter") return "補足意見を生成中";
+  if (provider.id === "qwen-free") return "実装視点で検証中";
   if (provider.id === "anthropic") return "論点を確認中";
   if (provider.id === "openai") return "回答を設計中";
   return "処理中";
@@ -564,7 +581,7 @@ function ConclusionBlock({ title, body, strong = false }: { title: string; body:
   return (
     <section className="rounded-md border border-[#d6ddd4] bg-white p-3">
       <h3 className="text-sm font-bold text-[#243227]">{title}</h3>
-      <p className={`mt-2 text-sm leading-7 ${strong ? "font-semibold text-[#17211b]" : "text-[#34443a]"}`}>{body}</p>
+      <p className={`mt-2 whitespace-pre-line text-sm leading-7 ${strong ? "font-semibold text-[#17211b]" : "text-[#34443a]"}`}>{body}</p>
     </section>
   );
 }
