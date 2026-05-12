@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { AiAnswer, AnalysisResult, ConsultationCategory, ProviderConfig, UsageMode, builtInProviders } from "@/lib/dummy-ai";
 import { detectPrivacyRisks } from "@/lib/privacy-guard";
 import { checkDailyLimit, getClientKey, usageLimits } from "@/lib/usage-limits";
@@ -285,7 +285,7 @@ function buildConclusion(category: ConsultationCategory, answers: AiAnswer[]): A
   const reasons = adoptionReasonLabels(best, ranked);
 
   return {
-    recommendation: buildFinalRecommendation(best, supplements),
+    recommendation: buildFinalRecommendation(best, supplements, reasons, failed),
     reason: reasons.join(" / "),
     alternatives: buildPeerReviews(ranked),
     cautions: [
@@ -344,10 +344,12 @@ function englishRatio(text: string) {
   return (text.match(/[A-Za-z]/g)?.length ?? 0) / Math.max(1, text.length);
 }
 
-function buildFinalRecommendation(best: AiAnswer, supplements: string[]) {
+function buildFinalRecommendation(best: AiAnswer, supplements: string[], reasons: string[], failed: AiAnswer[]) {
   const base = best.summary.replace(/\s+/g, " ");
-  const extra = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
-  return trimToLength(`${base}${extra}`, 400);
+  const lead = `統合判断: ${reasons.slice(0, 2).join(" / ")}。`;
+  const support = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
+  const caution = failed.length ? ` 注意: ${failed.slice(0, 1).map((answer) => answer.name).join(" / ")}は採用から外れました。` : "";
+  return trimToLength(`${lead}${base}${support}${caution}`, 400);
 }
 
 function trimToLength(text: string, max: number) {
@@ -361,18 +363,19 @@ function adoptionReasonLabels(best: AiAnswer, ranked: AiAnswer[]) {
   const reasons = ["質問への適合性が高い", "内容の密度が高い"];
   if (best.confidence >= 82) reasons.push("完成度が高い");
   if (ranked.length > 1) reasons.push("他AIの有用な補足と整合した");
+  reasons.push("単純な並列ではなく統合結論に向く");
   return reasons.slice(0, 4);
 }
 
 function buildPeerReviews(ranked: AiAnswer[]) {
-  return ranked.slice(0, 3).map((answer) => {
+  return ranked.slice(0, 3).map((answer, index) => {
     const base =
       answer.name === "Gemini Free"
-        ? "初心者向けに分かりやすいが、具体性はやや弱い"
+        ? "要点整理が強いが、深い統合は弱め"
         : answer.name === "GPT OSS Free"
-          ? "実装寄りで有用だが、長くなりやすい"
+          ? "実装寄りで有用だが、結論の磨き込みは別途必要"
           : answer.name === "OpenRouter Free"
-            ? "補足とリスク確認が強いが、結論の主役にはしにくい"
+            ? "補足とリスク確認が強く、反対意見の役割に向く"
             : "補足として有用";
     return `${answer.name}: ${base}`;
   });
@@ -435,3 +438,4 @@ function thirdFreeModelCandidates(provider: ProviderConfig) {
 function uniqueModels(models: Array<string | undefined>) {
   return Array.from(new Set(models.map((model) => model?.trim()).filter((model): model is string => Boolean(model))));
 }
+

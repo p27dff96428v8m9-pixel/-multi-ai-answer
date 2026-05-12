@@ -1,4 +1,4 @@
-import {
+﻿import {
   AiAnswer,
   AnalysisResult,
   ConsultationCategory,
@@ -343,7 +343,7 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
   const reasons = adoptionReasonLabels(best, ranked);
 
   return {
-    recommendation: buildFinalRecommendation(best, supplements),
+    recommendation: buildFinalRecommendation(best, supplements, reasons, failed),
     reason: reasons.join(" / "),
     alternatives: buildPeerReviews(ranked),
     cautions: [
@@ -402,10 +402,12 @@ function englishRatio(text: string) {
   return (text.match(/[A-Za-z]/g)?.length ?? 0) / Math.max(1, text.length);
 }
 
-function buildFinalRecommendation(best: AiAnswer, supplements: string[]) {
+function buildFinalRecommendation(best: AiAnswer, supplements: string[], reasons: string[], failed: AiAnswer[]) {
   const base = best.summary.replace(/\s+/g, " ");
-  const extra = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
-  return trimToLength(`${base}${extra}`, 400);
+  const lead = `統合判断: ${reasons.slice(0, 2).join(" / ")}。`;
+  const support = supplements.length ? ` 補足: ${supplements.join(" / ")}` : "";
+  const caution = failed.length ? ` 注意: ${failed.slice(0, 1).map((answer) => answer.name).join(" / ")}は採用から外れました。` : "";
+  return trimToLength(`${lead}${base}${support}${caution}`, 400);
 }
 
 function trimToLength(text: string, max: number) {
@@ -419,6 +421,7 @@ function adoptionReasonLabels(best: AiAnswer, ranked: AiAnswer[]) {
   const reasons = ["質問への適合性が高い", "内容の密度が高い"];
   if (best.confidence >= 82) reasons.push("完成度が高い");
   if (ranked.length > 1) reasons.push("他AIの有用な補足と整合した");
+  reasons.push("単純な並列ではなく統合結論に向く");
   return reasons.slice(0, 4);
 }
 
@@ -426,17 +429,17 @@ function buildPeerReviews(ranked: AiAnswer[]) {
   return ranked.slice(0, 3).map((answer, index) => {
     const base =
       answer.name === "Gemini"
-        ? "初心者向けに分かりやすいが、具体性はやや弱い"
+        ? "要点整理が強いが、深い統合は弱め"
         : answer.name === "GPT OSS Free"
-          ? "実装寄りで有用だが、長くなりやすい"
+          ? "実装寄りで有用だが、結論の磨き込みは別途必要"
           : answer.name === "OpenRouter"
-            ? "補足とリスク確認が強いが、結論の主役にはしにくい"
+            ? "補足とリスク確認が強く、反対意見の役割に向く"
             : answer.name === "Claude"
               ? "設計と文章の整理が強く、UXや注意点の把握に向く"
               : answer.name === "DeepSeek"
                 ? "別解とコスト感が有用だが、採用前の検証が必要"
                 : "ロジカルで実装に強く、統合の軸に向く";
-    return index === 0 ? `${answer.name}: ${base}` : `${answer.name}: ${base}`;
+    return `${answer.name}: ${base}`;
   });
 }
 
@@ -486,3 +489,4 @@ function extractErrorDetail(raw: string) {
     return raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   }
 }
+
