@@ -115,7 +115,7 @@ async function callOpenRouter(provider: ProviderConfig, question: string): Promi
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return { provider, error: publicProviderError("simple") };
 
-  const model = provider.id === "qwen-free" ? process.env.OPENROUTER_QWEN_MODEL || provider.model : process.env.OPENROUTER_FREE_MODEL || provider.model;
+  const model = provider.id === "qwen-free" ? resolveThirdFreeModel(provider) : process.env.OPENROUTER_FREE_MODEL || provider.model;
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -154,6 +154,11 @@ function providerPrompt(provider: ProviderConfig) {
   if (provider.id === "openrouter-free") return "あなたは複数の観点から補助意見を出すAIです。以下の質問に、分かりやすく実用的に答えてください。";
   if (provider.id === "qwen-free") return "あなたは別視点から確認するAIです。以下の質問に、分かりやすく実用的に答えてください。";
   return "以下の質問に、分かりやすく実用的に答えてください。";
+}
+
+function resolveThirdFreeModel(provider: ProviderConfig) {
+  const configured = process.env.OPENROUTER_QWEN_MODEL?.trim();
+  return configured && configured !== "qwen/qwen3-14b:free" ? configured : provider.model;
 }
 
 function toAnswer(result: ProviderCallResult, index: number): AiAnswer {

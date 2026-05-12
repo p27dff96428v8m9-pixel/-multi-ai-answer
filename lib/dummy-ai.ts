@@ -71,8 +71,8 @@ export const builtInProviders: ProviderConfig[] = [
   },
   {
     id: "qwen-free",
-    name: "Qwen Free",
-    model: "qwen/qwen3-14b:free",
+    name: "GPT OSS Free",
+    model: "openai/gpt-oss-20b:free",
     role: "別視点で確認するAI",
     costLabel: "簡単モード",
     origin: "built-in",
