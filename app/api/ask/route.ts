@@ -115,7 +115,19 @@ async function callOpenRouter(provider: ProviderConfig, question: string): Promi
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return { provider, error: publicProviderError("simple") };
 
-  const model = provider.id === "qwen-free" ? resolveThirdFreeModel(provider) : process.env.OPENROUTER_FREE_MODEL || provider.model;
+  const models = provider.id === "qwen-free" ? thirdFreeModelCandidates(provider) : openRouterModelCandidates(provider);
+  let lastError = publicProviderError("simple");
+
+  for (const model of models) {
+    const result = await callOpenRouterModel(provider, question, apiKey, model);
+    if (result.content) return result;
+    lastError = result.error ?? lastError;
+  }
+
+  return { provider, error: lastError };
+}
+
+async function callOpenRouterModel(provider: ProviderConfig, question: string, apiKey: string, model: string): Promise<ProviderCallResult> {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -159,6 +171,24 @@ function providerPrompt(provider: ProviderConfig) {
 function resolveThirdFreeModel(provider: ProviderConfig) {
   const configured = process.env.OPENROUTER_QWEN_MODEL?.trim();
   return configured && configured !== "qwen/qwen3-14b:free" ? configured : provider.model;
+}
+
+function openRouterModelCandidates(provider: ProviderConfig) {
+  return uniqueModels([process.env.OPENROUTER_FREE_MODEL, provider.model, "openai/gpt-oss-20b:free", "meta-llama/llama-3.2-3b-instruct:free"]);
+}
+
+function thirdFreeModelCandidates(provider: ProviderConfig) {
+  return uniqueModels([
+    resolveThirdFreeModel(provider),
+    "openai/gpt-oss-20b:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "z-ai/glm-4.5-air:free",
+    "google/gemma-4-26b-a4b-it:free",
+  ]);
+}
+
+function uniqueModels(models: Array<string | undefined>) {
+  return Array.from(new Set(models.map((model) => model?.trim()).filter((model): model is string => Boolean(model))));
 }
 
 function toAnswer(result: ProviderCallResult, index: number): AiAnswer {
