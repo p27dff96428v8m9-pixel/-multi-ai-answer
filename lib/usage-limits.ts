@@ -4,7 +4,7 @@ export const usageLimits = {
   dailySimpleRequests: Number(process.env.DAILY_SIMPLE_REQUEST_LIMIT ?? 10),
   dailyAdvancedRequests: Number(process.env.DAILY_ADVANCED_REQUEST_LIMIT ?? 30),
   maxQuestionLength: Number(process.env.MAX_QUESTION_LENGTH ?? 1200),
-  simpleProviderLimit: Number(process.env.SIMPLE_PROVIDER_LIMIT ?? 1),
+  simpleProviderLimit: Math.max(3, Number(process.env.SIMPLE_PROVIDER_LIMIT ?? 3)),
 };
 
 type UsageRecord = {
