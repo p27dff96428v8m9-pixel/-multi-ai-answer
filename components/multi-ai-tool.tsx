@@ -221,22 +221,14 @@ export function MultiAiTool() {
           </section>
 
           <aside className="min-w-0 space-y-4">
-            <ProviderSummary mode={mode} providers={mode === "simple" ? requestProviders : allProviders} />
+            {mode === "simple" ? <ProviderSummary mode={mode} providers={requestProviders} /> : <AdvancedSettingsPanel providers={allProviders} customKeys={customKeys} enabledCustomIds={enabledCustomIds} onToggle={(id) => {
+              setEnabledCustomIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+              resetOutput();
+            }} onChangeKey={(id, value) => {
+              setCustomKeys((current) => ({ ...current, [id]: value }));
+              resetOutput();
+            }} />}
             <HistoryPanel entries={history} onOpen={openHistoryEntry} onClear={clearHistory} onToggleLock={toggleHistoryLock} />
-            {mode === "advanced" ? (
-              <ApiKeyPanel
-                customKeys={customKeys}
-                enabledCustomIds={enabledCustomIds}
-                onToggle={(id) => {
-                  setEnabledCustomIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
-                  resetOutput();
-                }}
-                onChangeKey={(id, value) => {
-                  setCustomKeys((current) => ({ ...current, [id]: value }));
-                  resetOutput();
-                }}
-              />
-            ) : null}
           </aside>
         </div>
       </section>
@@ -504,12 +496,14 @@ function FinalAnswerCard({ result }: { result: AnalysisResult }) {
   );
 }
 
-function ApiKeyPanel({
+function AdvancedSettingsPanel({
+  providers,
   customKeys,
   enabledCustomIds,
   onToggle,
   onChangeKey,
 }: {
+  providers: ProviderConfig[];
   customKeys: Record<string, string>;
   enabledCustomIds: string[];
   onToggle: (id: string) => void;
@@ -517,36 +511,44 @@ function ApiKeyPanel({
 }) {
   return (
     <details className="max-w-full overflow-x-hidden rounded-lg border border-[#d6ddd4] bg-white p-4 shadow-sm">
-      <summary className="cursor-pointer text-sm font-semibold text-[#243227]">詳細設定（APIキー）</summary>
-      <div className="mt-4 grid gap-3">
-        {customProviders.map((provider) => {
-          const selected = enabledCustomIds.includes(provider.id);
-          const hasApiKey = Boolean(customKeys[provider.id]?.trim());
-          return (
-          <div key={provider.id} className="max-w-full overflow-x-hidden rounded-md border border-[#d6ddd4] bg-[#fbfcfa] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="break-words font-semibold text-[#243227]">{provider.name}</p>
-                  <p className="mt-1 break-words text-xs text-[#6b756d]">{hasApiKey ? "キー入力済み" : "キー未入力"}</p>
+      <summary className="cursor-pointer text-sm font-semibold text-[#243227]">詳細設定（AIプロバイダ / APIキー）</summary>
+      <p className="mt-2 text-xs leading-5 text-[#6b756d]">普段は閉じたまま使えます。必要なAIだけ有効化して、APIキーを入れてください。</p>
+      <div className="mt-4 grid gap-4">
+        <section className="grid gap-2">
+          <p className="text-xs font-semibold text-[#4f6f56]">使用するAI</p>
+          <div className="grid gap-2">
+            {providers.filter((provider) => provider.origin === "custom").map((provider, index) => {
+              const selected = enabledCustomIds.includes(provider.id);
+              const hasApiKey = Boolean(customKeys[provider.id]?.trim());
+              return (
+                <div key={provider.id} className="max-w-full overflow-x-hidden rounded-md border border-[#d6ddd4] bg-[#fbfcfa] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-[#2f8060]">Agent {index + 1}</p>
+                      <p className="break-words font-semibold text-[#243227]">{provider.name}</p>
+                      <p className="mt-1 break-words text-xs leading-5 text-[#6b756d]">{provider.role}</p>
+                    </div>
+                    <button type="button" onClick={() => onToggle(provider.id)} className={`max-w-full shrink-0 rounded-md px-3 py-2 text-xs font-semibold ${selected ? "bg-[#245f41] text-white" : "bg-[#e8ece9] text-[#34443a]"}`}>
+                      {selected ? "有効" : "無効"}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-[#6b756d]">{hasApiKey ? "キー入力済み" : "キー未入力"}</p>
+                  <label className="mt-3 block text-xs font-semibold text-[#34443a]" htmlFor={`key-${provider.id}`}>
+                    APIキー
+                  </label>
+                  <input
+                    id={`key-${provider.id}`}
+                    type="password"
+                    value={customKeys[provider.id] ?? ""}
+                    onChange={(event) => onChangeKey(provider.id, event.target.value)}
+                    placeholder="API key"
+                    className="mt-2 w-full max-w-full rounded-md border border-[#c6cec8] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#2f6b49] focus:ring-4 focus:ring-[#2f6b49]/15"
+                  />
                 </div>
-                <button type="button" onClick={() => onToggle(provider.id)} className={`max-w-full shrink-0 rounded-md px-3 py-2 text-xs font-semibold ${selected ? "bg-[#245f41] text-white" : "bg-[#e8ece9] text-[#34443a]"}`}>
-                  {selected ? "有効" : "無効"}
-                </button>
-              </div>
-              <label className="mt-3 block text-xs font-semibold text-[#34443a]" htmlFor={`key-${provider.id}`}>
-                APIキー
-              </label>
-              <input
-                id={`key-${provider.id}`}
-                type="password"
-                value={customKeys[provider.id] ?? ""}
-                onChange={(event) => onChangeKey(provider.id, event.target.value)}
-                placeholder="API key"
-                className="mt-2 w-full max-w-full rounded-md border border-[#c6cec8] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#2f6b49] focus:ring-4 focus:ring-[#2f6b49]/15"
-              />
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        </section>
       </div>
     </details>
   );
