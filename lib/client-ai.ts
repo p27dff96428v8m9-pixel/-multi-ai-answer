@@ -4,7 +4,6 @@ import {
   ConsultationCategory,
   ProviderConfig,
   UsageMode,
-  categoryLabels,
 } from "@/lib/dummy-ai";
 
 type ClientAskInput = {
@@ -21,20 +20,12 @@ type ProviderCallResult = {
   error?: string;
 };
 
-const categoryInstruction: Record<ConsultationCategory, string> = {
-  development: "ソフトウェア設計、実装、安全性、保守性、現実的な進め方の観点で答えてください。",
-  life: "日常で実行しやすく、負担が少ない行動に分けて答えてください。",
-  health: "一般的な健康・食事情報として答えてください。診断や治療判断は避け、必要なら専門家への相談を促してください。",
-  business: "事業性、検証方法、コスト、収益化、リスクの観点で答えてください。",
-  learning: "わかりやすい説明、学習計画、例、復習方法を含めて答えてください。",
-};
-
 export async function askAdvancedProviders(input: ClientAskInput): Promise<AnalysisResult> {
   const activeProviders = input.providers.filter((provider) => provider.enabled && provider.origin === "custom");
   const results = await Promise.all(
     activeProviders.map((provider) => callProvider(provider, input.category, input.question, input.customKeys[provider.id] ?? "")),
   );
-  const answers = results.map((result, index) => toAnswer(result, input.category, index));
+  const answers = results.map((result, index) => toAnswer(result, index));
 
   return {
     question: input.question,
@@ -66,13 +57,13 @@ export async function askSimpleRelay(input: Omit<ClientAskInput, "customKeys">):
   });
   const text = await response.text();
   const data = parseApiResponse(text);
-  if (!response.ok) throw new Error(data.error ?? "簡単モードの中継リクエストに失敗しました。");
+  if (!response.ok) throw new Error(publicProviderError("simple", data.error ?? text, response.status));
   return data as AnalysisResult;
 }
 
 async function callProvider(provider: ProviderConfig, category: ConsultationCategory, question: string, apiKey: string): Promise<ProviderCallResult> {
   const key = apiKey.trim();
-  if (!key) return { provider, error: `${provider.name}: APIキーが未入力です。` };
+  if (!key) return { provider, error: publicProviderError("advanced", "missing api key", 401) };
 
   if (provider.id === "openai") return callOpenAI(provider, category, question, key);
   if (provider.id === "anthropic") return callAnthropic(provider, category, question, key);
@@ -94,12 +85,12 @@ async function callOpenAI(provider: ProviderConfig, category: ConsultationCatego
     body: JSON.stringify({
       model,
       instructions: systemInstruction(),
-      input: buildPrompt(category, question, provider.name),
+      input: buildPrompt(question, provider),
       temperature: 0.4,
       max_output_tokens: 700,
     }),
   });
-  if (!response.ok) return { provider, error: await response.text() };
+  if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { output_text?: string; model?: string };
   const content = data.output_text?.trim();
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenAIからテキスト回答を取得できませんでした。" };
@@ -119,10 +110,10 @@ async function callAnthropic(provider: ProviderConfig, category: ConsultationCat
       model,
       max_tokens: 700,
       system: systemInstruction(),
-      messages: [{ role: "user", content: buildPrompt(category, question, provider.name) }],
+      messages: [{ role: "user", content: buildPrompt(question, provider) }],
     }),
   });
-  if (!response.ok) return { provider, error: await response.text() };
+  if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { content?: Array<{ text?: string }>; model?: string };
   const content = data.content?.map((item) => item.text ?? "").join("").trim();
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "Claudeからテキスト回答を取得できませんでした。" };
@@ -137,11 +128,11 @@ async function callGemini(provider: ProviderConfig, category: ConsultationCatego
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${buildPrompt(category, question, provider.name)}` }] }],
+      contents: [{ parts: [{ text: `${systemInstruction()}\n\n${buildPrompt(question, provider)}` }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 700 },
     }),
   });
-  if (!response.ok) return { provider, error: await response.text() };
+  if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   const content = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   return content ? { provider: { ...provider, model }, content } : { provider, error: "Geminiからテキスト回答を取得できませんでした。" };
@@ -161,13 +152,13 @@ async function callOpenRouter(provider: ProviderConfig, category: ConsultationCa
       model,
       messages: [
         { role: "system", content: systemInstruction() },
-        { role: "user", content: buildPrompt(category, question, provider.name) },
+        { role: "user", content: buildPrompt(question, provider) },
       ],
       temperature: 0.4,
       max_tokens: 700,
     }),
   });
-  if (!response.ok) return { provider, error: await response.text() };
+  if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; model?: string };
   const content = data.choices?.[0]?.message?.content?.trim();
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "OpenRouterからテキスト回答を取得できませんでした。" };
@@ -185,44 +176,46 @@ async function callDeepSeek(provider: ProviderConfig, category: ConsultationCate
       model,
       messages: [
         { role: "system", content: systemInstruction() },
-        { role: "user", content: buildPrompt(category, question, provider.name) },
+        { role: "user", content: buildPrompt(question, provider) },
       ],
       temperature: 0.4,
       max_tokens: 700,
     }),
   });
-  if (!response.ok) return { provider, error: await response.text() };
+  if (!response.ok) return { provider, error: await sanitizeProviderError(response, "advanced") };
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; model?: string };
   const content = data.choices?.[0]?.message?.content?.trim();
   return content ? { provider: { ...provider, model: data.model || model }, content } : { provider, error: "DeepSeekからテキスト回答を取得できませんでした。" };
 }
 
 function systemInstruction() {
-  return "日本語で、簡潔かつ実用的に答えてください。推奨案、理由、代替案、注意点を明確にしてください。";
+  return "あなたは役立つAIアシスタントです。以下の質問に、分かりやすく実用的に日本語で答えてください。";
 }
 
-function buildPrompt(category: ConsultationCategory, question: string, providerName: string) {
-  return [
-    `カテゴリ: ${categoryLabels[category]}`,
-    `担当AI: ${providerName}`,
-    categoryInstruction[category],
-    "次の形式を意識してください: 1. 要約 2. 推奨案 3. 理由 4. 注意点",
-    `質問: ${question}`,
-  ].join("\n");
+function buildPrompt(question: string, provider: ProviderConfig) {
+  return [providerPrompt(provider), "", "質問:", question].join("\n");
 }
 
-function toAnswer(result: ProviderCallResult, category: ConsultationCategory, index: number): AiAnswer {
+function providerPrompt(provider: ProviderConfig) {
+  if (provider.id === "gemini" || provider.id === "gemini-free") return "あなたは情報を広く整理するAIです。以下の質問に、分かりやすく実用的に答えてください。";
+  if (provider.id === "openrouter" || provider.id === "openrouter-free") return "あなたは複数の観点から補助意見を出すAIです。以下の質問に、分かりやすく実用的に答えてください。";
+  if (provider.id === "qwen-free") return "あなたは別視点から確認するAIです。以下の質問に、分かりやすく実用的に答えてください。";
+  return "以下の質問に、分かりやすく実用的に答えてください。";
+}
+
+function toAnswer(result: ProviderCallResult, index: number): AiAnswer {
   const hasError = Boolean(result.error);
   const content = result.content ?? "";
+  const summary = hasError ? "このAIは現在利用できません。APIキー設定または認証設定を確認してください。" : firstParagraph(content);
   return {
     id: result.provider.id,
     name: result.provider.name,
     model: result.provider.model,
-    role: result.provider.role || categoryInstruction[category],
+    role: result.provider.role,
     status: hasError ? "error" : "complete",
     confidence: hasError ? 0 : Math.max(72, 88 - index * 4),
-    summary: hasError ? "このAIから回答を取得できませんでした。" : firstParagraph(content),
-    bullets: hasError ? [result.error ?? "不明なエラー"] : extractBullets(content),
+    summary,
+    bullets: hasError ? [result.error ?? publicProviderError("advanced")] : extractBullets(content, summary),
     costLabel: result.provider.costLabel,
     origin: result.provider.origin,
     errorMessage: result.error,
@@ -242,7 +235,7 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
       recommendation: "有効なAPIキーを設定してから再実行してください。",
       reason: "詳細モードでは、入力されたユーザーAPIキーを使って各AIへ直接問い合わせます。",
       alternatives: ["別のAIキーを使う", "簡単モードで中継サーバーを使う", "キーを保存せず今回だけ入力する"],
-      cautions: failed.map((answer) => `${answer.name}: ${answer.errorMessage ?? "取得失敗"}`),
+      cautions: failed.map((answer) => `${answer.name}: ${answer.errorMessage ?? publicProviderError("advanced")}`),
       safetyNote,
     };
   }
@@ -251,7 +244,7 @@ function buildConclusion(question: string, category: ConsultationCategory, answe
     recommendation: completed[0].summary,
     reason: `${completed.length}件のAI回答を取得しました。質問: ${question}`,
     alternatives: completed.slice(1).map((answer) => `${answer.name}: ${answer.summary}`).slice(0, 3),
-    cautions: failed.map((answer) => `${answer.name}: ${answer.errorMessage ?? "取得失敗"}`).slice(0, 4),
+    cautions: [],
     safetyNote,
   };
 }
@@ -260,19 +253,35 @@ function firstParagraph(text: string) {
   return text.split(/\n{2,}/).find(Boolean)?.replace(/^[-*\d.\s]+/, "").trim() || text.slice(0, 180);
 }
 
-function extractBullets(text: string) {
+function extractBullets(text: string, summary: string) {
   const lines = text
     .split("\n")
     .map((line) => line.replace(/^[-*\d.\s]+/, "").trim())
-    .filter(Boolean);
-  return lines.slice(0, 4).length ? lines.slice(0, 4) : [text.slice(0, 220)];
+    .filter((line) => line && line !== summary);
+  return Array.from(new Set(lines)).slice(0, 4);
 }
 
 function parseApiResponse(text: string) {
   try {
     return JSON.parse(text);
   } catch {
-    const preview = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
-    throw new Error(`中継サーバーからJSONではない応答が返りました。${preview ? ` 内容: ${preview}` : ""}`);
+    throw new Error("中継サーバーから正常な応答を取得できませんでした。時間を置いて再試行してください。");
   }
+}
+
+async function sanitizeProviderError(response: Response, mode: "simple" | "advanced") {
+  const text = await response.text();
+  return publicProviderError(mode, text, response.status);
+}
+
+function publicProviderError(mode: "simple" | "advanced", raw = "", status?: number) {
+  if (status === 401 || /missing authentication|unauthorized|401|missing api key/i.test(raw)) {
+    return mode === "simple"
+      ? "このAIは現在利用できません。中継サーバー側の認証設定が必要です。"
+      : "このAIは現在利用できません。APIキーが未入力、または認証情報が正しくない可能性があります。";
+  }
+
+  return mode === "simple"
+    ? "このAIは現在一時的に利用できません。他のAIの回答をご確認ください。"
+    : "このAIは現在利用できません。APIキー設定または認証設定を確認してください。";
 }
