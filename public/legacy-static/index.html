@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>複数AIアンサー</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>複数AIアンサー</h1>
+            <p>質問を1回入力し、複数AIの回答を統合して結論を返します。</p>
+          </div>
+          <div class="status" id="status">待機中</div>
+        </header>
+
+        <form id="askForm" class="ask-form">
+          <label class="field">
+            <span>質問</span>
+            <textarea id="question" rows="8" placeholder="例: この仕様で最初に作るべきMVPの機能を優先順位付きで整理して"></textarea>
+          </label>
+
+          <section class="provider-grid" aria-label="AI設定">
+            <article class="provider-card">
+              <label class="provider-head">
+                <input type="checkbox" name="provider" value="openai" checked>
+                <span>OpenAI</span>
+              </label>
+              <input id="openaiKey" type="password" autocomplete="off" placeholder="OpenAI API Key">
+              <input id="openaiModel" type="text" value="gpt-5.2" aria-label="OpenAI model">
+            </article>
+
+            <article class="provider-card">
+              <label class="provider-head">
+                <input type="checkbox" name="provider" value="anthropic" checked>
+                <span>Anthropic</span>
+              </label>
+              <input id="anthropicKey" type="password" autocomplete="off" placeholder="Anthropic API Key">
+              <input id="anthropicModel" type="text" value="claude-sonnet-4-5" aria-label="Anthropic model">
+            </article>
+
+            <article class="provider-card">
+              <label class="provider-head">
+                <input type="checkbox" name="provider" value="gemini" checked>
+                <span>Google Gemini</span>
+              </label>
+              <input id="geminiKey" type="password" autocomplete="off" placeholder="Gemini API Key">
+              <input id="geminiModel" type="text" value="gemini-2.5-pro" aria-label="Gemini model">
+            </article>
+          </section>
+
+          <div class="controls">
+            <label class="compact-field">
+              <span>統合担当</span>
+              <select id="mergeProvider">
+                <option value="auto">自動</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </label>
+            <label class="save-key">
+              <input id="saveKeys" type="checkbox">
+              <span>この端末にAPIキーを保存</span>
+            </label>
+            <button id="submitButton" type="submit">実行</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="result-layout" aria-live="polite">
+        <article class="final-panel">
+          <div class="panel-head">
+            <h2>最終結論</h2>
+            <span id="mergedBy"></span>
+          </div>
+          <div id="finalAnswer" class="answer empty">まだ回答はありません。</div>
+        </article>
+
+        <aside class="responses-panel">
+          <h2>各AIの回答</h2>
+          <div id="responses" class="responses"></div>
+        </aside>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

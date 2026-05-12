@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+
+.next/
+out/
+node_modules/
+*.log
+tsconfig.tsbuildinfo
+
+android/.gradle/
+android/**/build/
