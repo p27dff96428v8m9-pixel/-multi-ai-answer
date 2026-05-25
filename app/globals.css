@@ -92,6 +92,71 @@ textarea::placeholder {
   color: #7b837d;
 }
 
+.theme-dark {
+  background: #111827 !important;
+  color: #e5e7eb !important;
+  color-scheme: dark;
+}
+
+.theme-dark form,
+.theme-dark details,
+.theme-dark article,
+.theme-dark section:not(:first-child),
+.theme-dark [class*="bg-white"],
+.theme-dark [class*="bg-[#fb"],
+.theme-dark [class*="bg-[#f8"],
+.theme-dark [class*="bg-[#eef"],
+.theme-dark [class*="bg-[#e8"] {
+  background-color: #1f2937 !important;
+  border-color: #475569 !important;
+  color: #e5e7eb !important;
+}
+
+.theme-dark input,
+.theme-dark textarea {
+  background-color: #111827 !important;
+  border-color: #64748b !important;
+  color: #f8fafc !important;
+}
+
+.theme-dark input::placeholder,
+.theme-dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+.theme-dark p,
+.theme-dark span,
+.theme-dark h1,
+.theme-dark h2,
+.theme-dark h3,
+.theme-dark li,
+.theme-dark summary,
+.theme-dark label {
+  color: inherit;
+}
+
+.theme-dark [class*="text-[#6b"],
+.theme-dark [class*="text-[#7a"],
+.theme-dark [class*="text-[#4b"],
+.theme-dark [class*="text-[#344"],
+.theme-dark [class*="text-[#243"],
+.theme-dark [class*="text-[#172"],
+.theme-dark [class*="text-[#102"] {
+  color: #cbd5e1 !important;
+}
+
+.theme-dark [class*="text-[#2f"],
+.theme-dark [class*="text-[#286"],
+.theme-dark [class*="text-[#4f"] {
+  color: #93c5fd !important;
+}
+
+.theme-dark button[class*="bg-[#eef"],
+.theme-dark button[class*="bg-[#e8"] {
+  background-color: #334155 !important;
+  color: #dbeafe !important;
+}
+
 .ai-pulse-dot {
   display: inline-block;
   width: 0.5rem;

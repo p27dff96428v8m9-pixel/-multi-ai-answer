@@ -1,4 +1,4 @@
-export type ConsultationCategory = "development" | "life" | "health" | "business" | "learning";
+export type ConsultationCategory = "development" | "life" | "health" | "business" | "learning" | "money" | "legal";
 export type UsageMode = "simple" | "advanced";
 export type ProviderId = "gemini-free" | "openrouter-free" | "qwen-free" | "deepseek" | "openai" | "anthropic" | "grok" | "openrouter";
 
@@ -22,8 +22,10 @@ export type AiAnswer = {
   confidence: number;
   summary: string;
   bullets: string[];
+  fullText?: string;
   costLabel: string;
   origin: "built-in" | "custom";
+  isHelper?: boolean;
   errorMessage?: string;
 };
 
@@ -48,6 +50,8 @@ export const categoryLabels: Record<ConsultationCategory, string> = {
   health: "健康・食事",
   business: "ビジネス",
   learning: "学習",
+  money: "お金",
+  legal: "法律",
 };
 
 export const builtInProviders: ProviderConfig[] = [
@@ -111,7 +115,7 @@ export const customProviders: ProviderConfig[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     role: "低コスト推論・開発相談・別解提示",
     costLabel: "ユーザーAPIキー",
     origin: "custom",
